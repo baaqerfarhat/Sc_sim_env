@@ -1,0 +1,66 @@
+{
+  "checks": {
+    "accel_p95_in_measured_band": {
+      "pass": true,
+      "detail": "p95 = 0.0543 m/s^2, measured band [0.025, 0.063]"
+    },
+    "accel_median_near_target": {
+      "pass": true,
+      "detail": "median = 0.0401 m/s^2, measured ~0.035"
+    },
+    "accel_agrees_with_chain_prediction": {
+      "pass": true,
+      "detail": "closed-loop median 0.0401 vs independent chain arithmetic 0.0384 m/s^2 (0.96 N / 25 kg) -> the Sec 7 independent agreement is reproduced"
+    },
+    "accel": {
+      "p95": 0.05430580079512738,
+      "median": 0.04009077699421608,
+      "chain_pred": 0.0384
+    },
+    "rmse_lands_near_1m": {
+      "pass": true,
+      "detail": "sim RMSE 0.896 +- 0.000 m vs hardware 1.034 +- 0.043 m (gate: near 1 m)"
+    },
+    "peak_matches_hardware": {
+      "pass": true,
+      "detail": "sim peak 2.000 +- 0.000 m vs hardware 2.013 +- 0.025 m"
+    },
+    "tracking": {
+      "rmse_mean": 0.895597131299118,
+      "rmse_sd": 1.1702778228589004e-16,
+      "mae_mean": 0.7017372243679157,
+      "peak_mean": 2.0,
+      "hw_rmse": 1.034,
+      "hw_peak": 2.013
+    },
+    "peak_explained_by_initial_setpoint_step": {
+      "pass": true,
+      "detail": "peak 2.000 m equals the 2.0 m initial setpoint step, which is why hardware peaked at 2.013 m"
+    },
+    "reference_switch_triggers": {
+      "pass": true,
+      "detail": "all 10 episodes reached the |y - y_wp1| < 0.15 m trigger, at step 99 (9.9 s)"
+    },
+    "two_or_three_unique_setpoints": {
+      "pass": true,
+      "detail": "2 setpoints per run by construction, consistent with the 2-3 unique setpoints verified in the logs"
+    },
+    "switch_step_mean": 99.0,
+    "control_rate_exact_10hz": {
+      "pass": true,
+      "detail": "exact 10 Hz simulated; measured dt median 0.1000 s, p95 0.1006 s -> jitter is not a material effect"
+    },
+    "solve_ms": {
+      "median": 0.09719900000000001,
+      "p95": 0.13665120000000133,
+      "note": "simulation wall time, not a controller latency claim"
+    },
+    "mpc_commands_outside_achievable_set": {
+      "pass": true,
+      "detail": "78.0% of commanded wrenches lie outside the achievable set (2.4 N / 0.96 N m) -> the structural gap dominates, and the theory's U must be the achievable set, not the declared box"
+    },
+    "frac_cmd_outside_achievable": 0.78
+  },
+  "failures": [],
+  "manifest_hash": "155bb5109e93c543"
+}

@@ -1,0 +1,18 @@
+# No trailing slashes: these are symlinks to another disk in this checkout, and a
+# "dir/" pattern does not match a symlink.
+
+# virtualenv (points at a 1 GB tree)
+.venv
+venv
+
+# generated episode data and trained checkpoints: 27 MB of binaries, reproducible
+# by re-running stage 5
+data
+
+# the manuscript is kept out of this repo deliberately
+final_paper_writeup
+
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store

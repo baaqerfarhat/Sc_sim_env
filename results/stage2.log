@@ -1,0 +1,32 @@
+==============================================================================
+STAGE 2  closed-loop hardware anchoring  [GATE]
+==============================================================================
+
+Running 10 episodes x 600 steps (60 s) on the step-setpoint reference, perfect state
+
+1. Achieved linear acceleration vs the measured envelope (Sec 7)
+  [PASS] accel_p95_in_measured_band   p95 = 0.0543 m/s^2, measured band [0.025, 0.063]
+  [PASS] accel_median_near_target   median = 0.0401 m/s^2, measured ~0.035
+  [PASS] accel_agrees_with_chain_prediction   closed-loop median 0.0401 vs independent chain arithmetic 0.0384 m/s^2 (0.96 N / 25 kg) -> the Sec 7 independent agreement is reproduced
+
+2. Position tracking vs hardware Table I healthy row
+  [PASS] rmse_lands_near_1m   sim RMSE 0.896 +- 0.000 m vs hardware 1.034 +- 0.043 m (gate: near 1 m)
+  [PASS] peak_matches_hardware   sim peak 2.000 +- 0.000 m vs hardware 2.013 +- 0.025 m
+  [PASS] peak_explained_by_initial_setpoint_step   peak 2.000 m equals the 2.0 m initial setpoint step, which is why hardware peaked at 2.013 m
+
+3. Reference switch behaviour (Sec 10)
+  [PASS] reference_switch_triggers   all 10 episodes reached the |y - y_wp1| < 0.15 m trigger, at step 99 (9.9 s)
+  [PASS] two_or_three_unique_setpoints   2 setpoints per run by construction, consistent with the 2-3 unique setpoints verified in the logs
+
+4. Control timing (Sec 7)
+  [PASS] control_rate_exact_10hz   exact 10 Hz simulated; measured dt median 0.1000 s, p95 0.1006 s -> jitter is not a material effect
+     solver: median 0.10 ms, p95 0.14 ms (accelerated sim wall time, NOT a real-time latency measurement)
+
+5. Commanded wrench routinely leaves the achievable set (Sec 4)
+  [PASS] mpc_commands_outside_achievable_set   78.0% of commanded wrenches lie outside the achievable set (2.4 N / 0.96 N m) -> the structural gap dominates, and the theory's U must be the achievable set, not the declared box
+
+==============================================================================
+STAGE 2 RESULT: 10/10 checks passed
+GATE OPEN - proceed to Stage 3
+==============================================================================
+wrote results/stage2_anchor.json

@@ -1,0 +1,59 @@
+==============================================================================
+STAGE 1  open-loop plant / allocator / duty / fault verification
+==============================================================================
+
+1. Achievable set (Sec 4 table)
+  [PASS] achievable_Fx_2.4N   Fx=2.400 N (target 2.4), Mz=0.000e+00 (couple cancels)
+  [PASS] achievable_Mz_0.96Nm   Mz=0.9600 N m (target 0.96), |F|=0.000e+00 (pure couple)
+  [PASS] declared_box_unreachable   declared/achievable = 2.08x force, 2.08x yaw
+
+2. Duty law proportional band (Sec 5)
+  [PASS] duty_band_lower_0.40N   on-time becomes positive at F=0.3980 N (spec ~0.40)
+  [PASS] duty_band_upper_matches_formula   on-time saturates at F=0.6050 N, matches closed form 0.60499 N
+     note: doc says upper edge ~0.65 N, formula gives 0.605 N -> band narrower than documented (recorded, formula wins)
+  [PASS] duty_ceiling_40ms   max on-time 40.000 ms in a 100 ms slot -> duty ceiling 0.40
+
+3. Minimum-pulse floor (Sec 5)
+  [PASS] min_pulse_stretch_12ms   F=0.0011 N (raw on-time 0.00 ms) -> stretched to 12.0 ms
+  [PASS] min_pulse_zero_below_thresh   F=0.0010 N -> 0.0 ms (zeroed, not accumulated)
+  [PASS] realizable_avg_force_set   nonzero average force spans [0.120, 0.400] x F_valve = [0.144, 0.480] N (spec {0} U [0.12,0.40])
+  [PASS] realizable_set_has_gap   gap between 0 and 0.1440 N is unattainable -> on/off quantization
+
+4. thrust_gain is not a clean factor of two (Sec 3)
+  [PASS] gain_doubles_below_half_cap   request Fx=1.0 N -> 2.000 N (doubled, below half the 5 N cap)
+  [PASS] gain_noop_above_half_cap   request Fx=4.0 N -> 5.000 N and Mz=0.7 -> 0.800 (both hit the cap; gain is a no-op)
+
+5. Deterministic fault pattern (Sec 6)
+  [PASS] fault_skip_rate_30pct   30 skips in 100 cycles at fault_fraction=0.7 (spec ~30%)
+  [PASS] fault_pattern_regular_3_per_10   first 10 cycles skip mask = 0100010010 -> 3 skips/s at 10 Hz, fixed pattern
+  [PASS] fault_deterministic_no_rng   identical skip mask on replay (no RNG, nothing seeded)
+  [PASS] fault_no_thrust_reduction   fmax stays 1.2 N on all eight thrusters at every level
+
+6. Fault degrades +Y and BOTH yaw signs (Sec 6)
+  [PASS] fault_targets_plusY_both_yaw   T7=FY+MZ- T8=FY+MZ+: both push +Y, yaw signs -0.2/+0.2 cover both directions
+
+7. Allocator behaviour (Sec 4)
+  [PASS] allocator_yaw_preferred   unachievable request [2.0,0,0.9]: yaw rel-err 0.106 < force rel-err 0.611 (W_tau weights yaw 8x)
+  [PASS] allocator_no_infeasible_detection   request Fx=5.0 N returns achieved 2.400 N silently, F within bounds (least-squares compromise, no flag)
+  [PASS] allocator_deadzone   ||tau|| < 1e-6 returns zeros
+  [PASS] allocator_deterministic   strictly convex -> unique and deterministic given history
+  [PASS] allocator_memory_load_bearing   same tau with different use_hist gives ||dF||=0.0507 -> allocator state must be carried in the certificate domain
+  [PASS] allocator_kkt_optimal   worst projected-gradient KKT residual over 200 random problems: 8.93e-14 (box-constrained strictly convex QP -> global optimum)
+  [PASS] allocator_no_better_point_exists   worst objective excess vs L-BFGS-B: 1.42e-14 (<=0 means our solution is at least as good everywhere)
+
+8. Independent acceleration agreement (Sec 7, the key validation)
+  [PASS] chain_avg_force_0.96N   2 thrusters x 1.2 N x 0.40 duty ceiling = 0.960 N average
+  [PASS] chain_accel_0.038   0.96 N / 25.0 kg = 0.0384 m/s^2
+  [PASS] chain_accel_inside_measured_band   chain 0.0384 lies inside the measured p95 band [0.025, 0.063] m/s^2 -> independent agreement reproduced
+
+9. Simulated open-loop acceleration through the real chain
+  [PASS] openloop_saturated_accel_matches_chain   saturated +X open-loop p95 accel = 0.0384 m/s^2 vs chain prediction 0.0384 (agreement within 4 mm/s^2)
+  [PASS] fault_degrades_plusY_authority   +Y velocity after 20 s: healthy 0.768 m/s vs faulted 0.538 m/s -> 30.0% authority loss
+
+==============================================================================
+STAGE 1 RESULT: 29/29 checks passed
+All Stage 1 checks passed. Gate open for Stage 2.
+==============================================================================
+wrote results/stage1_openloop.json
+  ascent direction in projection gd =    0.0000000000000000     
+  ascent direction in projection gd =    0.0000000000000000     

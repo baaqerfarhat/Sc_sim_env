@@ -1,0 +1,94 @@
+{
+  "checks": {
+    "healthy_pos_error_in_band": {
+      "pass": true,
+      "detail": "|dx| p95 = 0.337 m, target (0.22, 0.65) (measured C1)"
+    },
+    "healthy_yaw_error_in_band": {
+      "pass": true,
+      "detail": "dpsi p95 = 0.124 rad, target (0.1, 0.27) (measured C1)"
+    },
+    "healthy_rmse_still_near_hardware": {
+      "pass": true,
+      "detail": "RMSE 1.174 m with the estimator in the loop, hardware healthy 1.034 +- 0.043 m"
+    },
+    "occluded_pos_error_in_band": {
+      "pass": true,
+      "detail": "|dx| p95 = 1.462 m, target (0.79, 4.86) (measured V2, zero context)"
+    },
+    "degradation_is_monotone": {
+      "pass": true,
+      "detail": "degraded 1.462 m vs healthy 0.337 m -> 4.3x worse estimation"
+    },
+    "lpf_lag_is_dominant_contributor": {
+      "pass": true,
+      "detail": "with ALL VO noise set to zero the error is still 0.157 m of 0.337 m (47%) -> the tau=0.5 s LPF lag is the dominant single contributor, as Sec 8 states"
+    },
+    "fitted": {
+      "healthy": {
+        "pos_noise": 0.048,
+        "yaw_noise": 0.05,
+        "bias_rw": 0.024,
+        "yaw_bias_rw": 0.016,
+        "twist_noise": 0.02,
+        "dropout_p": 0.02,
+        "dropout_len": [
+          1,
+          3
+        ],
+        "scale_err": 0.0
+      },
+      "occluded": {
+        "pos_noise": 0.1,
+        "yaw_noise": 0.09000000000000001,
+        "bias_rw": 0.085,
+        "yaw_bias_rw": 0.03,
+        "twist_noise": 0.1,
+        "dropout_p": 0.18,
+        "dropout_len": [
+          3,
+          12
+        ],
+        "scale_err": 0.1
+      },
+      "verify_healthy": {
+        "dx_p95": 0.3366476231749022,
+        "dpsi_p95": 0.12427651370976876,
+        "rmse": 1.1736163880891988,
+        "peak": 2.0
+      },
+      "verify_occluded": {
+        "dx_p95": 1.461910945271862,
+        "dpsi_p95": 0.4515901298418176,
+        "rmse": 1.7749509251902207,
+        "peak": 2.9877492314591367
+      },
+      "lpf_lag_only": {
+        "dx_p95": 0.1574650708683911,
+        "dpsi_p95": 0.0
+      }
+    },
+    "gate_rejects_large_position_jump": {
+      "pass": true,
+      "detail": "3 m jump within one 0.1 s cycle rejected (>0.5 m in <0.2 s) and the previous state retained"
+    },
+    "gate_rejects_large_yaw_jump": {
+      "pass": true,
+      "detail": "120 deg yaw jump within 0.1 s rejected (>90 deg)"
+    },
+    "missing_pose_holds_lpf": {
+      "pass": true,
+      "detail": "on a missing pose the LPF continues from its last value; the `hold` branch is a functional no-op and `predict` is unreachable"
+    },
+    "no_imu_channel": {
+      "pass": true,
+      "detail": "no IMU enters the state estimate: the callback subscribes to the wrong topic and never fires (Sec 8)"
+    },
+    "one_shot_alignment_only": {
+      "pass": true,
+      "detail": "origin and initial heading inherited from Vicon at t0 only -> the system is NOT fully Vicon-free, and the paper should state this"
+    }
+  },
+  "failures": [],
+  "manifest_hash": "f483ee49b59f77dd"
+}
