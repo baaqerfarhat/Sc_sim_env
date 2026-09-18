@@ -19,14 +19,16 @@ Superseded: v1 (results_v1_archive): defective information boundary, plant rotat
 | Provenance | Value |
 |---|---|
 | Run id | `v3-contract-and-ablation` |
-| Code commit | `0e26e9a7e5b02af692e05319b33f974038ecc34d` (working tree DIRTY) |
+| Code commit | `24a42ac7bae950d888c9ce961432cd02638fbe15` |
 | Config manifest hash (at report time) | `07f277768a04859a` |
 | Python | 3.10.12 |
 
-Per-stage configuration hashes are **not identical**, and that is expected rather than a
-fault: Stage 3 refits the perception surrogate and writes those fitted values back into the
-manifest, so every stage run before the refit carries the earlier hash. The stages whose
-results are quoted in this report (6, 7, 8) all ran after it.
+Per-stage configuration hashes are **not identical**. There are two legitimate reasons and
+neither is a stale-value problem. First, Stage 3 refits the perception surrogate and writes
+those fitted values back into the manifest, so any stage run before the refit carries the
+earlier hash. Second, this campaign added the horizon-candidate constants to the config,
+which changes the hash without changing any quantity the earlier stages computed. The
+stages whose comparative results are quoted here (6, 7, 8) all ran under the current hash.
 
 | Stage | Config hash recorded |
 |---|---|
@@ -34,7 +36,7 @@ results are quoted in this report (6, 7, 8) all ran after it.
 | 2 anchoring | `155bb5109e93c543` |
 | 3 estimator | `155bb5109e93c543` |
 | 6 comparison | `07f277768a04859a` |
-| 7 certificate | `57bea4173319b8f6` |
+| 7 certificate | `07f277768a04859a` |
 | 8 horizon / OOD | `07f277768a04859a` |
 
 **Reproducibility, verified rather than asserted.** Stages 7 and 8 were re-executed from the
@@ -667,26 +669,47 @@ statement about the nominal design budget, not about the learned model. Recoveri
 residual analysis requires the checkpoint and latent-domain inputs that Stage 7 did not
 find; until it runs, residual admissibility is **not evaluated**.
 
-### 4.4 The horizon axis
+### 4.4 The horizon axis, and the disputed deployed horizon
 
 The certificate is a one-step contraction under K, so N does not appear in it
 algebraically. Sec 12 lists N because it determines achievable per-solve
 correction, which is an operational statement, so N is swept in closed loop.
 
+**The deployed horizon is not settled.** The manuscript states N=10 and the build
+spec asserts N=12. Neither has been checked against the flight configuration attached to
+the reported hardware logs, so this report treats the horizon as an open parameter and
+runs **both** candidates rather than adopting one. The earlier campaign's grid started at
+12 and never evaluated 10, which left the manuscript's own value untested.
+
 | Condition | N | RMSE (m) | rejected fraction | wall ms/step |
 |---|---|---|---|---|
-| healthy | 10 | 1.260 | 0.029 | 4.31 |
-| healthy | 12 | 1.273 | 0.034 | 4.21 |
+| healthy | 10 **<- manuscript** | 1.260 | 0.029 | 4.31 |
+| healthy | 12 **<- build spec** | 1.273 | 0.034 | 4.21 |
 | healthy | 20 | 1.162 | 0.068 | 4.69 |
 | healthy | 30 | 1.131 | 0.066 | 5.43 |
 | healthy | 40 | 1.158 | 0.065 | 5.78 |
 | healthy | 50 | 1.105 | 0.067 | 6.27 |
-| combined | 10 | 1.262 | 0.037 | 4.54 |
-| combined | 12 | 1.250 | 0.048 | 4.68 |
+| combined | 10 **<- manuscript** | 1.262 | 0.037 | 4.54 |
+| combined | 12 **<- build spec** | 1.250 | 0.048 | 4.68 |
 | combined | 20 | 1.263 | 0.069 | 5.27 |
 | combined | 30 | 1.298 | 0.072 | 5.76 |
 | combined | 40 | 1.256 | 0.073 | 6.06 |
 | combined | 50 | 1.293 | 0.077 | 6.52 |
+
+Paired directly on matched scenario draws, the two candidate horizons are indistinguishable:
+
+| Condition | dRMSE (manuscript - build spec), m | 95% interval | significant? |
+|---|---:|---:|---|
+| healthy | -0.0138 | [-0.0730, +0.0491] | no |
+| combined | +0.0118 | [-0.1512, +0.1457] | no |
+
+The largest difference is **0.0138 m**, against the 0.05-0.6 m effects this study is
+trying to resolve elsewhere. So the horizon discrepancy is **not load-bearing for any
+conclusion here**, and the manuscript does not need to resolve it to use these results -
+though it should still be resolved before the horizon is quoted as a fact about the
+hardware. Longer horizons do help the healthy case modestly (1.27 m at N=12 against 1.11 m
+at N=50) and do nothing for the combined-fault case, which is consistent with the binding
+constraint being authority and estimation rather than preview length.
 
 ---
 

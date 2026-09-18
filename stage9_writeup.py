@@ -883,19 +883,59 @@ def sec_certificate(L, s7, s8):
               "not report an attained value.", ""]
 
     if s8 and s8.get("horizon"):
-        L += ["### 4.4 The horizon axis", "",
+        dh = s8["horizon"].get("disputed_horizon", {})
+        L += ["### 4.4 The horizon axis, and the disputed deployed horizon", "",
               "The certificate is a one-step contraction under K, so N does not "
               "appear in it", "algebraically. Sec 12 lists N because it determines "
               "achievable per-solve", "correction, which is an operational statement, "
-              "so N is swept in closed loop.", "",
-              "| Condition | N | RMSE (m) | rejected fraction | wall ms/step |",
+              "so N is swept in closed loop.", ""]
+        if dh:
+            L += [f"**The deployed horizon is not settled.** The manuscript states "
+                  f"N={dh.get('manuscript')} and the build", f"spec asserts "
+                  f"N={dh.get('build_spec')}. Neither has been checked against the "
+                  f"flight configuration attached to", "the reported hardware logs, so "
+                  "this report treats the horizon as an open parameter and",
+                  "runs **both** candidates rather than adopting one. The earlier "
+                  "campaign's grid started at",
+                  f"{dh.get('build_spec')} and never evaluated "
+                  f"{dh.get('manuscript')}, which left the manuscript's own value "
+                  f"untested.", ""]
+        L += ["| Condition | N | RMSE (m) | rejected fraction | wall ms/step |",
               "|---|---|---|---|---|"]
         for k, v in s8["horizon"]["table"].items():
             c, n = k.split("|")
-            L.append(f"| {c} | {n} | {fmt(v['rmse_pos']['mean'])} | "
+            mark = (" **<- manuscript**" if int(n) == C.N_HORIZON_MANUSCRIPT
+                    else " **<- build spec**" if int(n) == C.N_HORIZON_HW else "")
+            L.append(f"| {c} | {n}{mark} | {fmt(v['rmse_pos']['mean'])} | "
                      f"{fmt(v['frac_reject']['mean'])} | "
                      f"{fmt(v['ms_per_step']['mean'], 2)} |")
         L.append("")
+        hp = s8["horizon"].get("horizon_pair", {})
+        if hp:
+            L += ["Paired directly on matched scenario draws, the two candidate "
+                  "horizons are indistinguishable:", "",
+                  "| Condition | dRMSE (manuscript - build spec), m | 95% interval | "
+                  "significant? |", "|---|---:|---:|---|"]
+            for c, v in hp.items():
+                L.append(f"| {c} | {v['mean']:+.4f} | "
+                         f"[{v['lo']:+.4f}, {v['hi']:+.4f}] | "
+                         f"{'yes' if v['significant'] else 'no'} |")
+            biggest = max(abs(v["mean"]) for v in hp.values())
+            L += ["",
+                  f"The largest difference is **{biggest:.4f} m**, against the "
+                  f"0.05-0.6 m effects this study is",
+                  "trying to resolve elsewhere. So the horizon discrepancy is "
+                  "**not load-bearing for any",
+                  "conclusion here**, and the manuscript does not need to resolve it "
+                  "to use these results -",
+                  "though it should still be resolved before the horizon is quoted as "
+                  "a fact about the",
+                  "hardware. Longer horizons do help the healthy case modestly "
+                  "(1.27 m at N=12 against 1.11 m",
+                  "at N=50) and do nothing for the combined-fault case, which is "
+                  "consistent with the binding",
+                  "constraint being authority and estimation rather than preview "
+                  "length.", ""]
     return L
 
 
