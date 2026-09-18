@@ -1,0 +1,9 @@
+{
+ "run_id": "v2-corrected",
+ "config_manifest_hash": "57bea4173319b8f6",
+ "git_commit": "4f967a40f6477724258b53acf9cf6464edacddcf",
+ "git_dirty": false,
+ "python": "3.10.12",
+ "started_utc": "2026-09-18T00:30:59Z",
+ "supersedes": "results_v1_archive (development campaign; its information boundary, plant rotation and fallback selection were defective and its numbers are not comparable with these)"
+}

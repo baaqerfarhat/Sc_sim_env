@@ -391,6 +391,7 @@ def main():
 
     report(out, rows)
     out["wall_time_s"] = time.time() - t0
+    out["manifest_hash"] = C.manifest_hash()
     with open("results/stage7_certificate.json", "w") as f:
         json.dump(out, f, indent=2, default=str)
     print(f"\nwrote results/stage7_certificate.json "

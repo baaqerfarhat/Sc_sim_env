@@ -349,7 +349,8 @@ def main():
            "ood": {k: v for k, v in ood.items() if k != "rows"},
            "ood_rows": ood["rows"], "model_level": ml,
            "frozen_from_stage6": {"eta": cert["eta"], "R": cert["R"], "tol": tol},
-           "wall_time_s": time.time() - t0}
+           "wall_time_s": time.time() - t0,
+           "manifest_hash": C.manifest_hash()}
     with open(f"{RES}/stage8_horizon.json", "w") as f:
         json.dump(out, f, indent=2, default=str)
     print(f"\nwrote {RES}/stage8_horizon.json ({out['wall_time_s'] / 60:.1f} min)")

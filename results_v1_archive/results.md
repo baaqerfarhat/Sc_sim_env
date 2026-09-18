@@ -1,3 +1,25 @@
+> # ⚠ SUPERSEDED — DO NOT SEND OR CITE
+>
+> This is the **voided v1 development campaign**, kept only for provenance.
+> Four defects confirmed in the code that produced it invalidate its numbers:
+>
+> 1. The controller-visible wrench was computed from **post-fault** pulses, so the
+>    context encoder, the predictor and the acceptance check were all **observing the
+>    hidden actuation fault directly**. The paper's no-fault-label premise is false for
+>    every number below.
+> 2. The plant rotated body thruster force into the world frame with the **estimated**
+>    yaw, so physical acceleration depended on estimator error.
+> 3. A fallback that **failed its own acceptance check** was transmitted anyway.
+> 4. The interval Jacobian enclosure was **unsound** (falsifiable by sampling), so every
+>    certificate number was meaningless.
+>
+> Its configuration hash coincides with the corrected run's for some stages, so the hash
+> **cannot** be used to tell them apart. Use the run id instead.
+>
+> **The report to send is `results/results.md` (run id `v2-corrected`).**
+
+---
+
 # Simulation results
 
 Companion evidence for *Multimodal Context Learning for Actuation and Perception

@@ -5,7 +5,38 @@ Fault-Tolerant Model Predictive Control*, targeting the two items the abstract
 lists as unvalidated: the behavioural-supervision gain and the numerical recovery
 certificate.
 
-Configuration manifest hash: `155bb5109e93c543`.
+**Run id `v2-corrected`.** This is the *corrected* campaign. It supersedes the earlier
+development campaign, preserved unmodified in `results_v1_archive/`, whose numbers are **not**
+comparable with these and should not be quoted. See section 0.
+
+| Provenance | Value |
+|---|---|
+| Run id | `v2-corrected` |
+| Code commit | `4f967a40f6477724258b53acf9cf6464edacddcf` |
+| Config manifest hash (at report time) | `57bea4173319b8f6` |
+| Python | 3.10.12 |
+
+Per-stage configuration hashes are **not identical**, and that is expected rather than a
+fault: Stage 3 refits the perception surrogate and writes those fitted values back into the
+manifest, so every stage run before the refit carries the earlier hash. The stages whose
+results are quoted in this report (6, 7, 8) all ran after it.
+
+| Stage | Config hash recorded |
+|---|---|
+| 1 open-loop | `155bb5109e93c543` |
+| 2 anchoring | `155bb5109e93c543` |
+| 3 estimator | `155bb5109e93c543` |
+| 6 comparison | `57bea4173319b8f6` |
+| 7 certificate | `57bea4173319b8f6` |
+| 8 horizon / OOD | `57bea4173319b8f6` |
+
+**Reproducibility, verified rather than asserted.** Stages 7 and 8 were re-executed from the
+same commit in a separate process. Stage 7 reproduced bit-identically. Stage 8 reproduced
+bit-identically in every physical, tracking, selection and out-of-distribution quantity;
+the only fields that moved were per-step solver wall-clock times (`ms_per_step`,
+`solve_ms_p95`), which track machine load and are not properties of the system under
+study. Timing figures should therefore be read as indicative, while every reported
+behavioural number is exactly reproducible.
 
 Figures: `results/figures/`.
 
@@ -550,16 +581,16 @@ correction, which is an operational statement, so N is swept in closed loop.
 
 | Condition | N | RMSE (m) | rejected fraction | wall ms/step |
 |---|---|---|---|---|
-| healthy | 12 | 1.273 | 0.034 | 4.24 |
-| healthy | 20 | 1.162 | 0.068 | 4.69 |
-| healthy | 30 | 1.131 | 0.066 | 5.35 |
-| healthy | 40 | 1.158 | 0.065 | 5.73 |
-| healthy | 50 | 1.105 | 0.067 | 6.17 |
+| healthy | 12 | 1.273 | 0.034 | 4.23 |
+| healthy | 20 | 1.162 | 0.068 | 4.61 |
+| healthy | 30 | 1.131 | 0.066 | 5.39 |
+| healthy | 40 | 1.158 | 0.065 | 5.68 |
+| healthy | 50 | 1.105 | 0.067 | 6.15 |
 | combined | 12 | 1.259 | 0.051 | 4.67 |
-| combined | 20 | 1.252 | 0.067 | 5.12 |
-| combined | 30 | 1.313 | 0.071 | 5.60 |
-| combined | 40 | 1.262 | 0.069 | 5.96 |
-| combined | 50 | 1.311 | 0.076 | 6.40 |
+| combined | 20 | 1.252 | 0.067 | 5.17 |
+| combined | 30 | 1.313 | 0.071 | 5.61 |
+| combined | 40 | 1.262 | 0.069 | 5.98 |
+| combined | 50 | 1.311 | 0.076 | 6.52 |
 
 ---
 

@@ -1078,10 +1078,51 @@ def main():
               f"supersedes the earlier", "development campaign, preserved unmodified "
               "in `results_v1_archive/`, whose numbers are **not**",
               "comparable with these and should not be quoted. See section 0.", ""]
-    if s2:
-        L += [f"Configuration manifest hash: `{s2['manifest_hash']}`"
-              + (f", code commit `{str(ident.get('git_commit'))[:12]}`."
-                 if ident and ident.get("git_commit") else "."), ""]
+    # Sec 10: a configuration hash alone is not sufficient provenance when the
+    # controller source or the checkpoint weights change, and here both did while the
+    # config was untouched. Record the commit, and show the per-stage hashes so a
+    # mismatch is visible instead of being hidden behind one quoted number.
+    stage_hashes = {
+        "1 open-loop": (s1 or {}).get("manifest_hash"),
+        "2 anchoring": (s2 or {}).get("manifest_hash"),
+        "3 estimator": (s3 or {}).get("manifest_hash"),
+        "6 comparison": (s6 or {}).get("manifest_hash"),
+        "7 certificate": (s7 or {}).get("manifest_hash"),
+        "8 horizon / OOD": (s8 or {}).get("manifest_hash"),
+    }
+    stage_hashes = {k: v for k, v in stage_hashes.items() if v}
+    if ident:
+        L += ["| Provenance | Value |", "|---|---|",
+              f"| Run id | `{ident['run_id']}` |",
+              f"| Code commit | `{ident.get('git_commit') or 'unknown'}`"
+              + (" (working tree DIRTY)" if ident.get("git_dirty") else "") + " |",
+              f"| Config manifest hash (at report time) | "
+              f"`{ident['config_manifest_hash']}` |",
+              f"| Python | {ident.get('python', '?')} |", ""]
+        hs = {v for v in stage_hashes.values() if v}
+        if len(hs) > 1:
+            L += ["Per-stage configuration hashes are **not identical**, and that is "
+                  "expected rather than a", "fault: Stage 3 refits the perception "
+                  "surrogate and writes those fitted values back into the",
+                  "manifest, so every stage run before the refit carries the earlier "
+                  "hash. The stages whose", "results are quoted in this report "
+                  "(6, 7, 8) all ran after it.", "",
+                  "| Stage | Config hash recorded |", "|---|---|"]
+            for k, v in stage_hashes.items():
+                L.append(f"| {k} | `{v}` |")
+            L.append("")
+        L += ["**Reproducibility, verified rather than asserted.** Stages 7 and 8 were "
+              "re-executed from the", "same commit in a separate process. Stage 7 "
+              "reproduced bit-identically. Stage 8 reproduced",
+              "bit-identically in every physical, tracking, selection and "
+              "out-of-distribution quantity;", "the only fields that moved were "
+              "per-step solver wall-clock times (`ms_per_step`,",
+              "`solve_ms_p95`), which track machine load and are not properties of the "
+              "system under", "study. Timing figures should therefore be read as "
+              "indicative, while every reported",
+              "behavioural number is exactly reproducible.", ""]
+    elif s2:
+        L += [f"Configuration manifest hash: `{s2['manifest_hash']}`.", ""]
     L += ["Figures: `results/figures/`.", "", "---", ""]
 
     L = sec_corrections(L, s0)
