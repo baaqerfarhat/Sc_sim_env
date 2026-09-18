@@ -91,12 +91,23 @@ def sec_corrections(L, s0):
           "*fault-reduced*", "wrench, which divides out the very impairment the "
           "signature exists to describe.", ""]
     if s0:
+        n_fail = s0["n_checks"] - s0["n_pass"]
         L += [f"**Semantic gate (Stage 0).** {s0['n_pass']}/{s0['n_checks']} checks "
-              f"pass. These are now a hard gate", "ahead of every other stage, "
+              f"pass. These run as a hard gate", "ahead of every other stage, "
               "asserting that hidden fault information cannot reach the",
               "controller, that physical thrust follows true attitude, that the "
               "selection logic transmits", "what it claims to, and that the "
-              "enclosures survive sampling. Selected checks:", "",
+              "enclosures survive sampling."]
+        if n_fail:
+            failed = [k for k, v in s0["checks"].items() if not v["pass"]]
+            L += ["",
+                  f"**{n_fail} check(s) currently FAIL: "
+                  f"{', '.join(failed)}.** The gate is red, so Stage 0 exits nonzero "
+                  f"and `run_all.py` will not proceed past it. The numbers in this "
+                  f"report were produced *before* that check existed and are retained "
+                  f"deliberately, with the affected scope stated in Sec 0.1, rather "
+                  f"than deleted or quietly regenerated."]
+        L += ["", "Selected checks:", "",
               "| Check | Result |", "|---|---|"]
         for k, v in list(s0["checks"].items()):
             L.append(f"| {k} | {'PASS' if v['pass'] else 'FAIL'}. {v['detail']} |")
@@ -104,6 +115,40 @@ def sec_corrections(L, s0):
               "Passing 6.1 does **not** certify the continuum; it only records that no "
               "counterexample was", "found. A rigorous claim needs verified interval "
               "or exact arithmetic, which this does not", "implement.", ""]
+    # A fifth defect, found by the follow-up review and confirmed numerically after
+    # this campaign ran. It is recorded here because it qualifies how the faulted
+    # cells in this report should be read, and it is not yet fixed.
+    L += ["### 0.1 A further defect, confirmed after this campaign ran", "",
+          "The hidden pulse-skip is applied at a **different counter state** in the "
+          "two execution paths.",
+          "`CommandChain.__call__`, the shorthand used for data generation, previews "
+          "the fault and then",
+          "advances the counter. The closed-loop policy path does the opposite: "
+          "`policy.act` calls",
+          "`chain.commit` (which advances the counter) and the runner calls "
+          "`chain.apply_hidden`",
+          "afterwards, so evaluation runs the fault schedule one cycle ahead of "
+          "training.", "",
+          "This was verified directly rather than inferred: across firing fractions "
+          "{0.3, 0.5, 0.7, 0.9}",
+          "and initial phases {0, 1, 2}, **all 12 configurations produce different "
+          "fire/skip sequences**",
+          "between the two paths, and the policy sequence equals the shorthand "
+          "sequence at phase + 1.", "",
+          "Scope of the consequence, stated precisely. This is a **phase offset, not a "
+          "change in fault",
+          "intensity**: the long-run skip rate, and therefore the mean lost impulse, "
+          "is identical. So it",
+          "does not invalidate the healthy cells at all, and is unlikely to move the "
+          "aggregate faulted",
+          "means much. What it does break is packet-level correspondence between the "
+          "training",
+          "distribution and the evaluation distribution, which is exactly the "
+          "correspondence a learned",
+          "residual is supposed to rely on. Faulted closed-loop numbers in this report "
+          "should therefore",
+          "be treated as **provisional pending a single unified execution "
+          "contract**.", ""]
     L += ["Two approximations are declared rather than fixed, and their consequences "
           "are carried", "through the results:", "",
           "- **The first-action norm condition is not enforced inside the "
@@ -325,9 +370,31 @@ def sec_behavioural(L, s5, s6, s8):
           "prediction-loss", "weights. The single intentional difference is "
           "`lambda_I`.", ""]
     ds = s5["dataset"]
-    L += [f"Training set: {ds['n_episodes']} parent episodes, "
+    # The generated corpus is split five ways; only the `train` split is training
+    # data. Quoting the corpus total as "the training set" overstates it by 2.25x.
+    sm = ds.get("split_manifest", {})
+    tr = sm.get("train", {})
+    L += [f"**Generated corpus:** {ds['n_episodes']} parent episodes, "
           f"{ds['n_transitions']:,} transitions, {ds['n_probe_branches']} probe "
           f"branches ({ds['probe_extra_transitions']:,} extra transitions).", ""]
+    if tr:
+        L += [f"**Of that, the training split is {tr['parent_episodes']} parent "
+              f"episodes** ({tr.get('control_steps', 0):,} control steps, "
+              f"{tr.get('windows', 0):,} windows). The remainder is held for dev, "
+              f"score fitting, calibration and test:", "",
+              "| Split | Parent episodes | Control steps | Purpose |", "|---|---|---|---|"]
+        purpose = {"train": "gradient updates",
+                   "dev": "lambda_I selection, early stopping",
+                   "fitting": "score objects",
+                   "calibration": "eta / R selection",
+                   "test": "final reported comparisons"}
+        for name in ("train", "dev", "fitting", "calibration", "test"):
+            if name in sm:
+                s = sm[name]
+                L.append(f"| `{name}` | {s.get('parent_episodes', 0)} | "
+                         f"{s.get('control_steps', 0):,} | "
+                         f"{purpose.get(name, '')} |")
+        L.append("")
 
     L += ["### 2.1 The behavioural loss does optimise", "",
           "| Model | lambda_I | L_impact first -> last epoch | dev one-step loss |",
@@ -483,6 +550,49 @@ def sec_methods(L, s6):
                      f"{'n/a' if not np.isfinite(rj) else f'{rj:.3f}'} |")
     L.append("")
 
+    # Sec 4.5 / 8.1: the stored table records candidate, supervisor and
+    # post-allocation-fallback shares but NOT fallback_first_action, so the three
+    # logged shares sum to well under one. `frac_fallback` (solver failure and
+    # deadline miss) is identically zero in this campaign, and Stage 0 established
+    # that the declared outcomes are exhaustive, so the residual is the first-action
+    # share. It is derived here and labelled as derived rather than logged.
+    L += ["### 3.0 Complete action-source decomposition", "",
+          "Every transmitted command comes from exactly one source. The stored table "
+          "logs three of",
+          "them; the eta-free first-action rejection was counted in `stats` but not "
+          "aggregated, so the",
+          "logged shares do not sum to one. It is recovered below as the residual, "
+          "which is valid here",
+          "only because the solver-failure share is identically zero in this run.", "",
+          "| Condition | candidate | supervisor | fallback (post-alloc) | "
+          "fallback (solver) | fallback (first-action), *derived* | sum |",
+          "|---|---|---|---|---|---|---|"]
+    for c in s6["conditions"]:
+        t = tab.get(f"{c}|full")
+        if not t:
+            continue
+        cand = t["frac_src_candidate"]["mean"]
+        sup = t["frac_supervisor"]["mean"]
+        ck = t["frac_src_fallback_checked"]["mean"]
+        sf = t.get("frac_fallback", {}).get("mean", 0.0)
+        fa = 1.0 - (cand + sup + ck + sf)
+        L.append(f"| {c} | {cand:.3f} | {sup:.3f} | {ck:.3f} | {sf:.3f} | "
+                 f"**{fa:.3f}** | {cand + sup + ck + sf + fa:.3f} |")
+    L += ["",
+          "The derived first-action share is **large** - it is the second biggest "
+          "source in every",
+          "condition and the largest single rejection mechanism. That matters for "
+          "interpretation: the",
+          "reason MPC candidates are rarely transmitted is dominated by the "
+          "eta-*free* first-action",
+          "condition, which no choice of eta can relax, rather than by the "
+          "post-allocation test that",
+          "eta controls. Any attempt to raise the MPC action share by tuning eta is "
+          "therefore aimed at",
+          "the smaller of the two mechanisms. This share should be logged directly "
+          "rather than derived.",
+          ""]
+
     ap = s6.get("anchor_preserved", {})
     if ap:
         L += [f"Achieved-acceleration p95 across all healthy runs: "
@@ -555,14 +665,38 @@ def sec_methods(L, s6):
         cv = cal["eta_curve"]
         best, worst = min(cv, key=lambda c: c["rmse"]), max(cv, key=lambda c: c["rmse"])
         L += ["",
-              f"The relationship is monotone: as the check is enforced harder the "
-              f"rejected fraction rises from {worst['frac_reject']:.1%} to "
-              f"{best['frac_reject']:.1%} and RMSE falls from "
-              f"{worst['rmse']:.3f} m to {best['rmse']:.3f} m, a "
-              f"**{(1 - best['rmse'] / worst['rmse']) * 100:.0f}% reduction**. This is "
-              f"independent evidence that the post-allocation check of Eq. (18) is "
-              f"load-bearing, and it is consistent with the `full` vs `full_no_check` "
-              f"contrast above, which uses the same checkpoint on the test split.", "",
+              f"**Reading this table correctly.** eta is added to the right-hand side "
+              f"of Eq. (18), so a", f"larger eta *relaxes* the decrease inequality "
+              f"rather than enforcing it harder. Tracking", f"error nevertheless falls "
+              f"from {worst['rmse']:.3f} m to {best['rmse']:.3f} m "
+              f"(**{(1 - best['rmse'] / worst['rmse']) * 100:.0f}%**) as eta grows "
+              f"from {worst['eta']:.2f} to", f"{best['eta']:.2f}, while the rejected "
+              f"fraction *also* rises from {worst['frac_reject']:.1%} to "
+              f"{best['frac_reject']:.1%}.", "",
+              "Those two facts look contradictory only if eta affected nothing but "
+              "the candidate test.",
+              "It does not. The same eta appears in the fallback's own acceptance "
+              "check, and a passing",
+              "fallback is one of the two pre-action eligibility conditions, so "
+              "raising eta lets the fallback",
+              "pass more often, makes more samples eligible, and lets more candidates "
+              "reach the test at",
+              "all. The number of rejections can therefore grow even though each "
+              "individual test is",
+              "easier, and the trajectory changes as well, so the states at which the "
+              "test is applied are",
+              "not held fixed across rows.", "",
+              "This curve is consequently **not** a clean isolation of the "
+              "post-allocation check; it is a",
+              "joint eta-sensitivity of eligibility, supervisor share and candidate "
+              "acceptance. The",
+              "eligibility-mediated part is unmeasured, because the sweep did not "
+              "record per-eta",
+              "action-source fractions, and that instrumentation is required before "
+              "any causal",
+              "attribution is stated. What the curve does support is narrower: eta "
+              "matters for",
+              "closed-loop tracking, and eta = 0 is not the best available choice.", "",
               f"**This must not be reported as a rarely-active safety net.** At the "
               f"selected eta the", f"check rejects "
               f"{best['frac_reject']:.0%} of candidate wrenches, so for most samples "
@@ -668,27 +802,49 @@ def sec_certificate(L, s7, s8):
         if sub:
             alpha = max(float(r["residual_alpha_max"]) for r in sub)
             break
-    L += ["### 4.3 The trained residual is not admissible, by four orders of "
-          "magnitude", "",
-          "The residual enters Lemma 3 through a *sound enclosure* of its Jacobian. "
-          "Two were", "computed, and the tighter used: a domain-restricted interval "
-          "propagation bound", f"({fmt(res.get('ibp_max'), 3)}) and the global "
-          f"product-of-spectral-norms bound", f"({fmt(res.get('global_max'), 3)}). "
-          "Neither is a sampled Jacobian, so both are", "admissible under Appendix II.",
-          "",
-          f"- The trained residual's sensitivity of the state increment to the "
-          f"commanded wrench is up to **603x the nominal value** "
-          f"(nominal Ts/m = {fmt(res.get('nominal_du_sensitivity'), 4)}). That is "
-          f"physically nonsensical and is an artefact of unconstrained training.",
-          f"- The largest admissible scale is **alpha <= {fmt(alpha, 6)}**, so the "
-          f"residual is inadmissible by roughly four orders of magnitude.",
-          "",
-          "**This converts \"the certificate is empty\" into an actionable design "
-          "requirement:**", "the learned residual must be trained under an explicit "
-          "Lipschitz budget (for example", "spectral normalisation with a fixed "
-          "coefficient) before it can appear inside a", "certificate at all. That is a "
-          "concrete, checkable specification, and it is the most", "useful thing this "
-          "stage produces.", ""]
+    # The residual enclosure did not run in this campaign: stage 7 emits
+    # residual == {}. Every quantity this subsection used to assert (a "603x"
+    # sensitivity ratio, "four orders of magnitude" of inadmissibility) was a
+    # hardcoded string sitting next to its own n/a values. Report the analysis as
+    # unavailable instead of restating numbers no current output supports.
+    if not res:
+        L += ["### 4.3 Residual admissibility: not evaluated in this campaign", "",
+              "Stage 7 emits an empty `residual` object, so **no residual Jacobian "
+              "enclosure was computed**",
+              "for this run and no admissible-scale bound exists to report. Earlier "
+              "versions of this",
+              "section asserted a sensitivity ratio of \"603x nominal\" and "
+              "inadmissibility \"by four orders",
+              "of magnitude\". Those were retained strings, not regenerated values, "
+              "and the surrounding",
+              "fields printed as `n/a` at the same time. They are removed rather than "
+              "reworded.", "",
+              "This also means the empty certificate result of Sec 4.1 **cannot** be "
+              "attributed to residual",
+              "Lipschitz growth on this evidence. The swept certificate used nominal "
+              "matrices, so it is a",
+              "statement about the nominal design budget, not about the learned model. "
+              "Recovering the",
+              "residual analysis requires the checkpoint and latent-domain inputs that "
+              "Stage 7 did not",
+              "find; until it runs, residual admissibility is **not evaluated**.", ""]
+    else:
+        L += ["### 4.3 Residual admissibility", "",
+              "The residual enters Lemma 3 through a *sound enclosure* of its "
+              "Jacobian. Two were",
+              "computed, and the tighter used: a domain-restricted interval "
+              "propagation bound",
+              f"({fmt(res.get('ibp_max'), 3)}) and the global "
+              f"product-of-spectral-norms bound",
+              f"({fmt(res.get('global_max'), 3)}). Neither is a sampled Jacobian, so "
+              "both are", "admissible under Appendix II.", "",
+              f"- Sensitivity of the state increment to the commanded wrench, against "
+              f"a nominal Ts/m of {fmt(res.get('nominal_du_sensitivity'), 4)}: "
+              f"**{fmt(res.get('du_sensitivity_ratio'), 1)}x nominal**.",
+              f"- Largest admissible scale: **alpha <= {fmt(alpha, 6)}**.", "",
+              "An enclosure is an upper bound, so these figures bound the residual's "
+              "sensitivity and do",
+              "not report an attained value.", ""]
 
     if s8 and s8.get("horizon"):
         L += ["### 4.4 The horizon axis", "",
@@ -761,18 +917,43 @@ def sec_paper_support(L, s6, s7, s8):
               f"distinct", "intervention that the protocol requires to be labelled "
               "separately. It is left out of the", "table rather than paired with "
               "something it does not correspond to."]
+    # Generated from the paired effects rather than asserted. An earlier version of
+    # this passage claimed all four conditions favoured learned context with
+    # intervals excluding zero, which the table below contradicts in two of four.
+    won, lost, unres = [], [], []
+    for c in ("healthy", "actuator", "perception", "combined"):
+        v = s6["paired_effects"].get(f"full-zero_context|{c}|post_onset_rmse")
+        if not v:
+            continue
+        (won if v["hi"] < 0 else lost if v["lo"] > 0 else unres).append(c)
+    perc = s6["paired_effects"].get("full-zero_context|perception|post_onset_rmse", {})
+    tabp = s6["table"]
+    sred = None
+    if tabp.get("perception|zero_context") and tabp.get("perception|full"):
+        sred = (1 - tabp["perception|full"]["rmse_pos"]["mean"]
+                / tabp["perception|zero_context"]["rmse_pos"]["mean"]) * 100
+    hw_occl = (1 - hw[("occl", "learned")]["rmse"] / hw[("occl", "zero")]["rmse"]) * 100
     L += ["",
           "Read this honestly in both directions:", "",
-          "- **The direction and the significance replicate everywhere.** All four "
-          "simulated conditions favour learned context over zero-context, with "
-          "intervals excluding zero, on matched draws. That is a much harder claim to "
-          "attack than three small-n hardware comparisons.",
-          "- **The magnitudes do not all replicate.** The simulated perception "
-          "improvement is roughly half the hardware's 57.9%. The hardware occluded "
-          "cells have the largest spread in Table I, so the honest inference is that "
-          "the biggest hardware percentage sits at the optimistic end of what this "
-          "mechanism delivers. Saying so pre-empts the obvious reviewer objection and "
-          "costs nothing, because the *claim* survives.", "",
+          f"- **The direction is condition-dependent, and does not replicate "
+          f"everywhere.** Learned context significantly beats zero-context under "
+          f"{' and '.join(won) if won else 'no condition'} "
+          f"({len(won)}/4), and is significantly **worse** under "
+          f"{' and '.join(lost) if lost else 'none'} ({len(lost)}/4)"
+          + (f", with {len(unres)} unresolved" if unres else "") + ". The advantage "
+          f"is therefore specific to the perception-degraded regimes, which is the "
+          f"regime the hardware occlusion runs probe, and the healthy and "
+          f"actuator-only cells run the other way.",
+          f"- **The magnitudes do not replicate either.** The simulated perception "
+          f"improvement is {sred:.1f}% against the hardware's {hw_occl:.1f}%, i.e. "
+          f"roughly {hw_occl / sred:.1f}x smaller. The hardware occluded cells have "
+          f"the largest spread in Table I, so the honest inference is that the biggest "
+          f"hardware percentage sits at the optimistic end of what this mechanism "
+          f"delivers.",
+          "- **What this costs the paper.** A uniform win was claimed by the earlier "
+          "campaign and did not survive closing the fault-information leak. The "
+          "defensible claim is now narrower: context learning helps when perception "
+          "is degraded, and is not a general improvement across fault modes.", "",
           "This is also the answer to \"why simulate at all when you have hardware?\": "
           "the simulation", "supplies the matched ablations that are impossible on the "
           "hardware - identical scenario", "draws across six controllers, a "
@@ -970,10 +1151,18 @@ def sec_summary(L, s2, s6, s7, s8):
                  f"of the measured performance is the fallback and the eligibility "
                  f"logic, not MPC; Sec 3 |")
         n, good, bad, (lo, hi), nc, ncs = verdict("full-full_no_check")
-        L.append(f"| The post-allocation acceptance check is load-bearing (M3 vs M4) | "
-                 f"**supported, large** | {lo:+.3f} to {hi:+.3f} m, {good}/{n} "
-                 f"significant, now compared per-checkpoint rather than broadcast. "
-                 f"Without it the controller diverges; Sec 3 |")
+        # `check_mode="off"` disables three mechanisms at once, not one:
+        # supervisor diversion on ineligibility, the first-action condition, and the
+        # post-allocation acceptance test. The gap is real but cannot be attributed
+        # to the allocated-command check alone.
+        L.append(f"| The **combined** command safeguards are load-bearing (M3 vs M4) | "
+                 f"**supported, large; not an isolated component** | {lo:+.3f} to "
+                 f"{hi:+.3f} m, {good}/{n} significant, compared per-checkpoint. But "
+                 f"M4 switches off *three* mechanisms together - supervisor diversion "
+                 f"when ineligible, the first-action condition, and the "
+                 f"post-allocation test - so this does **not** isolate the "
+                 f"allocated-command check. Without the bundle the controller "
+                 f"diverges; Sec 3 |")
         n, good, bad, (lo, hi), nc, ncs = verdict("full-zero_context")
         L.append(f"| Beats the hardware-matched comparator (M3 vs HW) | "
                  f"**condition-dependent** | {lo:+.3f} to {hi:+.3f} m: better under "
@@ -985,14 +1174,19 @@ def sec_summary(L, s2, s6, s7, s8):
         n_ts = sum(v["n_task_success"] for v in tab.values())
         n_ep = sum(v["n_episodes"] for v in tab.values())
         best = max(tab.items(), key=lambda kv: kv[1]["task_success_rate"])
+        # "Unattainable" would be a claim about the plant. The evidence only covers
+        # the controllers actually evaluated, and the dwell is scored at the current
+        # waypoint rather than the final one, so the endpoint is not yet the task.
         L.append(f"| Declared task specification is met | **not supported** | "
                  f"pos <= {spec.get('tol_pos_m', 0.15):.2f} m and yaw <= "
                  f"{spec.get('tol_yaw_deg', 5):.0f} deg held "
                  f"{spec.get('dwell_s', 2):.0f} s is reached in only "
                  f"{n_ts}/{n_ep} rollouts overall; the best cell is "
-                 f"`{best[0]}` at {best[1]['task_success_rate']:.0%}. The spec is "
-                 f"**not attainable** under the modelled estimator and authority; "
-                 f"Sec 3 |")
+                 f"`{best[0]}` at {best[1]['task_success_rate']:.0%}. The **evaluated "
+                 f"controllers rarely achieve it**; that is not evidence the "
+                 f"specification is unattainable in principle, and the dwell is "
+                 f"currently scored at the *current* waypoint rather than the final "
+                 f"one; Sec 3 |")
 
     if s8 and s8.get("ood"):
         ot = s8["ood"]["table"]

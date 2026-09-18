@@ -16,6 +16,10 @@
    "pass": true,
    "detail": "fault cycle 0->1; committed packet is the selected one: True"
   },
+  "2.4f data-generation and policy paths fire identical physical pulses": {
+   "pass": false,
+   "detail": "12 of 12 (firing fraction, phase) configurations produce different fire/skip sequences between the two execution paths; e.g. (0.3, 0). The policy path advances the fault counter in commit() before apply_hidden() previews it, so it runs one cycle ahead of the shorthand used to generate training data."
+  },
   "2.4e u_k reconstructs from commanded pulses and nominal parameters": {
    "pass": true,
    "detail": "max |reconstruction - logged| = 0.00e+00"
@@ -70,8 +74,10 @@
   }
  },
  "n_pass": 17,
- "n_checks": 17,
- "failures": [],
+ "n_checks": 18,
+ "failures": [
+  "2.4f data-generation and policy paths fire identical physical pulses"
+ ],
  "manifest_hash": "57bea4173319b8f6",
- "wall_time_s": 14.25724744796753
+ "wall_time_s": 13.819478750228882
 }

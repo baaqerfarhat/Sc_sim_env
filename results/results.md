@@ -64,10 +64,14 @@ and then paired as though matched, so signature distances mixed the impairment w
 initial condition. The probe signature regressed physical response against the *fault-reduced*
 wrench, which divides out the very impairment the signature exists to describe.
 
-**Semantic gate (Stage 0).** 17/17 checks pass. These are now a hard gate
+**Semantic gate (Stage 0).** 17/18 checks pass. These run as a hard gate
 ahead of every other stage, asserting that hidden fault information cannot reach the
 controller, that physical thrust follows true attitude, that the selection logic transmits
-what it claims to, and that the enclosures survive sampling. Selected checks:
+what it claims to, and that the enclosures survive sampling.
+
+**1 check(s) currently FAIL: 2.4f data-generation and policy paths fire identical physical pulses.** The gate is red, so Stage 0 exits nonzero and `run_all.py` will not proceed past it. The numbers in this report were produced *before* that check existed and are retained deliberately, with the affected scope stated in Sec 0.1, rather than deleted or quietly regenerated.
+
+Selected checks:
 
 | Check | Result |
 |---|---|
@@ -75,6 +79,7 @@ what it claims to, and that the enclosures survive sampling. Selected checks:
 | 2.4b physical successor still changes with the hidden fault | PASS. identical commanded pulses (max diff 0.0e+00) but physical state differs by 3.8400e-03; skip flags False/True |
 | 2.4c repeated trials mutate neither allocator memory nor fault phase | PASS. 5 trials: max drift 0.0e+00, memory unchanged True, fault counter 0->0 |
 | 2.4d one commit = one memory update and one fault slot | PASS. fault cycle 0->1; committed packet is the selected one: True |
+| 2.4f data-generation and policy paths fire identical physical pulses | FAIL. 12 of 12 (firing fraction, phase) configurations produce different fire/skip sequences between the two execution paths; e.g. (0.3, 0). The policy path advances the fault counter in commit() before apply_hidden() previews it, so it runs one cycle ahead of the shorthand used to generate training data. |
 | 2.4e u_k reconstructs from commanded pulses and nominal parameters | PASS. max |reconstruction - logged| = 0.00e+00 |
 | 3.4a body force rotates with TRUE yaw | PASS. yaw 0 -> dv=(+0.00192,+0.00000), yaw 90deg -> dv=(+0.00000,+0.00192) |
 | 3.4b physical integration takes no estimator yaw argument | PASS. plant_step parameters: ['x', 'dt_on', 'substeps', 'valve', 'eta_smooth', 'mass', 'jzz', 'drag', 'yaw_damp'] |
@@ -93,6 +98,26 @@ Passing 6.1 does **not** certify the continuum; it only records that no countere
 found. A rigorous claim needs verified interval or exact arithmetic, which this does not
 implement.
 
+### 0.1 A further defect, confirmed after this campaign ran
+
+The hidden pulse-skip is applied at a **different counter state** in the two execution paths.
+`CommandChain.__call__`, the shorthand used for data generation, previews the fault and then
+advances the counter. The closed-loop policy path does the opposite: `policy.act` calls
+`chain.commit` (which advances the counter) and the runner calls `chain.apply_hidden`
+afterwards, so evaluation runs the fault schedule one cycle ahead of training.
+
+This was verified directly rather than inferred: across firing fractions {0.3, 0.5, 0.7, 0.9}
+and initial phases {0, 1, 2}, **all 12 configurations produce different fire/skip sequences**
+between the two paths, and the policy sequence equals the shorthand sequence at phase + 1.
+
+Scope of the consequence, stated precisely. This is a **phase offset, not a change in fault
+intensity**: the long-run skip rate, and therefore the mean lost impulse, is identical. So it
+does not invalidate the healthy cells at all, and is unlikely to move the aggregate faulted
+means much. What it does break is packet-level correspondence between the training
+distribution and the evaluation distribution, which is exactly the correspondence a learned
+residual is supposed to rely on. Faulted closed-loop numbers in this report should therefore
+be treated as **provisional pending a single unified execution contract**.
+
 Two approximations are declared rather than fixed, and their consequences are carried
 through the results:
 
@@ -110,9 +135,9 @@ through the results:
 | Inferring a *changing* context helps (M2 vs M1) | **supported** | -0.405 to -0.065 m, 4/4 conditions significant. This is the clean isolation: both sides carry no behavioural loss; Sec 3 |
 | The learned residual helps (M3 vs M0) | **partially supported** | -0.321 to -0.005 m, 2/4 conditions significant, with the same recovery structure on both sides; Sec 3 |
 | MPC planning adds value beyond the fallback (M3 vs M5) | **not supported** | -0.033 to +0.066 m; removing the optimiser entirely and keeping only the checked fallback changes little, and is significantly BETTER in 1/4 conditions. Much of the measured performance is the fallback and the eligibility logic, not MPC; Sec 3 |
-| The post-allocation acceptance check is load-bearing (M3 vs M4) | **supported, large** | -3.206 to -1.460 m, 4/4 significant, now compared per-checkpoint rather than broadcast. Without it the controller diverges; Sec 3 |
+| The **combined** command safeguards are load-bearing (M3 vs M4) | **supported, large; not an isolated component** | -3.206 to -1.460 m, 4/4 significant, compared per-checkpoint. But M4 switches off *three* mechanisms together - supervisor diversion when ineligible, the first-action condition, and the post-allocation test - so this does **not** isolate the allocated-command check. Without the bundle the controller diverges; Sec 3 |
 | Beats the hardware-matched comparator (M3 vs HW) | **condition-dependent** | -0.503 to +0.613 m: better under perception and combined faults, **worse** under healthy and actuator-only. The earlier campaign's uniform win did not survive closing the fault-information leak; Sec 3 |
-| Declared task specification is met | **not supported** | pos <= 0.15 m and yaw <= 5 deg held 2 s is reached in only 70/3840 rollouts overall; the best cell is `healthy|no_impact` at 11%. The spec is **not attainable** under the modelled estimator and authority; Sec 3 |
+| Declared task specification is met | **not supported** | pos <= 0.15 m and yaw <= 5 deg held 2 s is reached in only 70/3840 rollouts overall; the best cell is `healthy|no_impact` at 11%. The **evaluated controllers rarely achieve it**; that is not evidence the specification is unattainable in principle, and the dwell is currently scored at the *current* waypoint rather than the final one; Sec 3 |
 | Learned residual transfers to an unseen reference family | **not supported; fails badly** | on the held-out `transfer` family the learned methods reach 4.8-5.0 m RMSE against 0.37-1.35 m for the *zero-context* comparator - roughly an order of magnitude worse. The residual is trained on `step`/`smooth` and does not generalise off them; Sec 2.4 |
 | Behavioural supervision helps on cross-reference transfer | **weak, and immaterial** | this is the one axis where M3 beats M2: significantly better in 2/2 held-out-family cells. But the gain is ~0.13-0.17 m on top of a ~5 m error, so it improves a regime in which the method has already failed; Sec 2.4 |
 | The evaluated policy is mostly the *proposed* controller | **no** | the fixed supervisor issues 42%-65% of all transmitted actions under M3, because pre-action eligibility requires a fallback that passes its own check and it usually does not. What the table scores is largely a fixed velocity-damping law, not context-conditioned MPC; Sec 3 |
@@ -235,7 +260,17 @@ Two facts from these stages matter for everything after:
 optimiser budget, epochs, learning rate, checkpoint rule and prediction-loss
 weights. The single intentional difference is `lambda_I`.
 
-Training set: 360 parent episodes, 216,000 transitions, 3832 probe branches (229,920 extra transitions).
+**Generated corpus:** 360 parent episodes, 216,000 transitions, 3832 probe branches (229,920 extra transitions).
+
+**Of that, the training split is 160 parent episodes** (96,000 control steps, 94,240 windows). The remainder is held for dev, score fitting, calibration and test:
+
+| Split | Parent episodes | Control steps | Purpose |
+|---|---|---|---|
+| `train` | 160 | 96,000 | gradient updates |
+| `dev` | 40 | 24,000 | lambda_I selection, early stopping |
+| `fitting` | 48 | 28,800 | score objects |
+| `calibration` | 48 | 28,800 | eta / R selection |
+| `test` | 64 | 38,400 | final reported comparisons |
 
 ### 2.1 The behavioural loss does optimise
 
@@ -400,6 +435,27 @@ diverge only through the control.
 | combined | `full_no_check` | 3.539 ± 1.268 | 6.25 | 4/180 | 21.40 | n/a |
 | combined | `fallback_only` | 1.220 ± 0.219 | 2.00 | 150/180 | 14.55 | 0.000 |
 
+### 3.0 Complete action-source decomposition
+
+Every transmitted command comes from exactly one source. The stored table logs three of
+them; the eta-free first-action rejection was counted in `stats` but not aggregated, so the
+logged shares do not sum to one. It is recovered below as the residual, which is valid here
+only because the solver-failure share is identically zero in this run.
+
+| Condition | candidate | supervisor | fallback (post-alloc) | fallback (solver) | fallback (first-action), *derived* | sum |
+|---|---|---|---|---|---|---|
+| healthy | 0.097 | 0.624 | 0.035 | 0.000 | **0.244** | 1.000 |
+| actuator | 0.079 | 0.654 | 0.026 | 0.000 | **0.241** | 1.000 |
+| perception | 0.121 | 0.423 | 0.044 | 0.000 | **0.412** | 1.000 |
+| combined | 0.129 | 0.421 | 0.042 | 0.000 | **0.408** | 1.000 |
+
+The derived first-action share is **large** - it is the second biggest source in every
+condition and the largest single rejection mechanism. That matters for interpretation: the
+reason MPC candidates are rarely transmitted is dominated by the eta-*free* first-action
+condition, which no choice of eta can relax, rather than by the post-allocation test that
+eta controls. Any attempt to raise the MPC action share by tuning eta is therefore aimed at
+the smaller of the two mechanisms. This share should be logged directly rather than derived.
+
 Achieved-acceleration p95 across all healthy runs: 0.0466 ± 0.0054 m/s^2, still inside the measured band: **yes**. The comparison did not silently change the actuator authority.
 
 ### 3.1 All paired effects on the primary endpoint
@@ -491,7 +547,25 @@ Test episodes are disjoint from calibration.
 | 2.0000 | 1.3393 | 2.141 | 0.040 **<- selected** |
 | 4.9093 | 1.3505 | 2.148 | 0.040 |
 
-The relationship is monotone: as the check is enforced harder the rejected fraction rises from 1.8% to 4.0% and RMSE falls from 1.788 m to 1.339 m, a **25% reduction**. This is independent evidence that the post-allocation check of Eq. (18) is load-bearing, and it is consistent with the `full` vs `full_no_check` contrast above, which uses the same checkpoint on the test split.
+**Reading this table correctly.** eta is added to the right-hand side of Eq. (18), so a
+larger eta *relaxes* the decrease inequality rather than enforcing it harder. Tracking
+error nevertheless falls from 1.788 m to 1.339 m (**25%**) as eta grows from 0.00 to
+2.00, while the rejected fraction *also* rises from 1.8% to 4.0%.
+
+Those two facts look contradictory only if eta affected nothing but the candidate test.
+It does not. The same eta appears in the fallback's own acceptance check, and a passing
+fallback is one of the two pre-action eligibility conditions, so raising eta lets the fallback
+pass more often, makes more samples eligible, and lets more candidates reach the test at
+all. The number of rejections can therefore grow even though each individual test is
+easier, and the trajectory changes as well, so the states at which the test is applied are
+not held fixed across rows.
+
+This curve is consequently **not** a clean isolation of the post-allocation check; it is a
+joint eta-sensitivity of eligibility, supervisor share and candidate acceptance. The
+eligibility-mediated part is unmeasured, because the sweep did not record per-eta
+action-source fractions, and that instrumentation is required before any causal
+attribution is stated. What the curve does support is narrower: eta matters for
+closed-loop tracking, and eta = 0 is not the best available choice.
 
 **This must not be reported as a rarely-active safety net.** At the selected eta the
 check rejects 4% of candidate wrenches, so for most samples the transmitted
@@ -556,22 +630,19 @@ Two clean findings:
 - **The step-setpoint reference is structurally uncertifiable.** Its 1.0 m setpoint jump in one 0.1 s sample is a reference defect no bounded thrust can follow, giving b_r up to 33.2 against R_U ~ 1. Sec 12 predicted exactly this.
 - **The smooth feasible reference comes close.** At the maximum-authority corner (duty 1.0, fmax 4.0 N, no dead band) it is short by a factor of 2.1 with perfectly known mass and 6.4 at ±5%. Crucially the binding term there is the **allocator** allowance eta_q, not the reference defect: once the reference is feasible and the authority is raised, what stands between this system and a certificate is the quantised pulse-width allocator. That is the boundary the sweep was asked to locate, and it points at a different subsystem than expected.
 
-### 4.3 The trained residual is not admissible, by four orders of magnitude
+### 4.3 Residual admissibility: not evaluated in this campaign
 
-The residual enters Lemma 3 through a *sound enclosure* of its Jacobian. Two were
-computed, and the tighter used: a domain-restricted interval propagation bound
-(n/a) and the global product-of-spectral-norms bound
-(n/a). Neither is a sampled Jacobian, so both are
-admissible under Appendix II.
+Stage 7 emits an empty `residual` object, so **no residual Jacobian enclosure was computed**
+for this run and no admissible-scale bound exists to report. Earlier versions of this
+section asserted a sensitivity ratio of "603x nominal" and inadmissibility "by four orders
+of magnitude". Those were retained strings, not regenerated values, and the surrounding
+fields printed as `n/a` at the same time. They are removed rather than reworded.
 
-- The trained residual's sensitivity of the state increment to the commanded wrench is up to **603x the nominal value** (nominal Ts/m = n/a). That is physically nonsensical and is an artefact of unconstrained training.
-- The largest admissible scale is **alpha <= n/a**, so the residual is inadmissible by roughly four orders of magnitude.
-
-**This converts "the certificate is empty" into an actionable design requirement:**
-the learned residual must be trained under an explicit Lipschitz budget (for example
-spectral normalisation with a fixed coefficient) before it can appear inside a
-certificate at all. That is a concrete, checkable specification, and it is the most
-useful thing this stage produces.
+This also means the empty certificate result of Sec 4.1 **cannot** be attributed to residual
+Lipschitz growth on this evidence. The swept certificate used nominal matrices, so it is a
+statement about the nominal design budget, not about the learned model. Recovering the
+residual analysis requires the checkpoint and latent-domain inputs that Stage 7 did not
+find; until it runs, residual admissibility is **not evaluated**.
 
 ### 4.4 The horizon axis
 
@@ -621,8 +692,9 @@ table rather than paired with something it does not correspond to.
 
 Read this honestly in both directions:
 
-- **The direction and the significance replicate everywhere.** All four simulated conditions favour learned context over zero-context, with intervals excluding zero, on matched draws. That is a much harder claim to attack than three small-n hardware comparisons.
-- **The magnitudes do not all replicate.** The simulated perception improvement is roughly half the hardware's 57.9%. The hardware occluded cells have the largest spread in Table I, so the honest inference is that the biggest hardware percentage sits at the optimistic end of what this mechanism delivers. Saying so pre-empts the obvious reviewer objection and costs nothing, because the *claim* survives.
+- **The direction is condition-dependent, and does not replicate everywhere.** Learned context significantly beats zero-context under perception and combined (2/4), and is significantly **worse** under healthy and actuator (2/4). The advantage is therefore specific to the perception-degraded regimes, which is the regime the hardware occlusion runs probe, and the healthy and actuator-only cells run the other way.
+- **The magnitudes do not replicate either.** The simulated perception improvement is 20.4% against the hardware's 57.9%, i.e. roughly 2.8x smaller. The hardware occluded cells have the largest spread in Table I, so the honest inference is that the biggest hardware percentage sits at the optimistic end of what this mechanism delivers.
+- **What this costs the paper.** A uniform win was claimed by the earlier campaign and did not survive closing the fault-information leak. The defensible claim is now narrower: context learning helps when perception is degraded, and is not a general improvement across fault modes.
 
 This is also the answer to "why simulate at all when you have hardware?": the simulation
 supplies the matched ablations that are impossible on the hardware - identical scenario

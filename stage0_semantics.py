@@ -140,6 +140,45 @@ def sec2_one_commit_one_slot():
           f"selected one: {committed_b}")
 
 
+def sec2_one_execution_contract():
+    """The data-generation path and the policy path must realise the hidden fault at
+    the SAME counter state.
+
+    `CommandChain.__call__` (used by data generation) previews the fault and then
+    advances. The policy path advances inside `policy.act`'s `chain.commit` and only
+    then calls `apply_hidden`, so it runs the schedule one cycle early. That makes the
+    training and evaluation distributions differ at packet level for the same
+    commanded pulses, which is precisely the correspondence a learned residual relies
+    on. The skip RATE is unchanged, so this is a phase defect rather than a severity
+    defect, but it still has to be one contract.
+    """
+    u_star = np.array([0.35, -0.22, 0.05])
+    disagree = []
+    for frac in (0.3, 0.5, 0.7, 0.9):
+        for phase in (0, 1, 2):
+            a, b = [], []
+            ch = _fresh_chain(frac, True, phase=phase)
+            for _ in range(8):
+                _, info = ch(u_star, 0.0)                  # shorthand path
+                a.append(not info["fault_skip"])
+            ch = _fresh_chain(frac, True, phase=phase)
+            for _ in range(8):
+                _, info = ch.trial(u_star, 0.0)
+                ch.commit(info)                            # what policy.act does
+                _, skipped = ch.apply_hidden(info)         # what the runner does
+                b.append(not skipped)
+            if a != b:
+                disagree.append((frac, phase))
+    check("2.4f data-generation and policy paths fire identical physical pulses",
+          not disagree,
+          f"{len(disagree)} of 12 (firing fraction, phase) configurations produce "
+          f"different fire/skip sequences between the two execution paths"
+          + (f"; e.g. {disagree[0]}" if disagree else "")
+          + ". The policy path advances the fault counter in commit() before "
+            "apply_hidden() previews it, so it runs one cycle ahead of the "
+            "shorthand used to generate training data.")
+
+
 def sec2_reconstruct_u_from_pulses():
     """u_k must be reconstructible from saved commanded pulses and nominal params."""
     ch = _fresh_chain(0.7, True)
@@ -405,6 +444,7 @@ def main():
     sec2_physical_successor_does_change()
     sec2_trial_does_not_mutate()
     sec2_one_commit_one_slot()
+    sec2_one_execution_contract()
     sec2_reconstruct_u_from_pulses()
 
     print("\n--- Section 3.4: physics, coordinates, authority ---")
