@@ -1,0 +1,63 @@
+==============================================================================
+STAGE 7  recovery certificate and authority/horizon sweep
+==============================================================================
+
+residual Jacobian enclosure:
+    source                   data/model_full_s0.pt
+    used                     global_norms
+    ibp_max                  5.33
+    global_max               3.767
+    nominal_du_sensitivity   0.004
+    -> the learned residual claims up to 603x the NOMINAL sensitivity of the state increment to the commanded wrench
+
+--- solving 42 LMI designs
+   LMI: 42/42 done in 26s (10 workers)
+   LMI: 42/42 done in 26s (10 workers)
+    42/42 feasible
+
+--- sweeping family x lambda x effort x tolerance x authority
+    2100 sweep cells
+
+==============================================================================
+CERTIFICATE RESULTS
+==============================================================================
+
+### reference family: step
+  reference defect b_r spans 1.0726 .. 33.1830
+  contraction gamma+nu < 1 vs plant-parameter tolerance:
+    +/- 0.0%   best lambda = 0.9616  YES   (at lam0=0.9, w=10000)
+    +/- 1.0%   best lambda = 0.9685  YES   (at lam0=0.95, w=10000)
+    +/- 2.0%   best lambda = 0.9743  YES   (at lam0=0.95, w=10000)
+    +/- 5.0%   best lambda = 0.9918  YES   (at lam0=0.95, w=10000)
+    +/-10.0%   best lambda = 1.0073  no    (at lam0=0.995, w=100)
+    -> contraction REQUIRES tolerance <= +/-5%
+  HARDWARE authority (duty 0.40, fmax 1.2 N, offset -0.07686 s), best cell over the design grid:
+    tolerance +/-0%  lambda=0.9800  |K|max=9.99
+    b_r=1.9451  d_cert=0.080  eta_q=0.0318
+    s_cert=102.8463  vs  R_U=0.5557  R_corridor=1.065  R_chart=5.889
+    NONEMPTY = False   binding: s_cert>R_U; largest term = b_r
+    admissible residual Jacobian scale alpha <= 2.479e-04  (the trained residual is INADMISSIBLE)
+  nonempty cells: 0/1050
+  EMPTY everywhere in the swept grid.
+  closest cell: duty=0.70, tol +/-0%, lambda=0.9800, s_cert/R = 97.3, binding: s_cert>R_corridor; largest term = b_r
+
+### reference family: smooth
+  reference defect b_r spans 0.0076 .. 0.1970
+  contraction gamma+nu < 1 vs plant-parameter tolerance:
+    +/- 0.0%   best lambda = 0.9127  YES   (at lam0=0.9, w=10000)
+    +/- 1.0%   best lambda = 0.9238  YES   (at lam0=0.9, w=10000)
+    +/- 2.0%   best lambda = 0.9349  YES   (at lam0=0.9, w=10000)
+    +/- 5.0%   best lambda = 0.9683  YES   (at lam0=0.9, w=10000)
+    +/-10.0%   best lambda = 1.0070  no    (at lam0=0.995, w=10000)
+    -> contraction REQUIRES tolerance <= +/-5%
+  HARDWARE authority (duty 0.40, fmax 1.2 N, offset -0.07686 s), best cell over the design grid:
+    tolerance +/-0%  lambda=0.9573  |K|max=25.92
+    b_r=0.0913  d_cert=0.080  eta_q=0.0840
+    s_cert=5.9840  vs  R_U=1.6978  R_corridor=17.001  R_chart=5.965
+    NONEMPTY = False   binding: s_cert>R_U; largest term = b_r
+    admissible residual Jacobian scale alpha <= 2.016e-04  (the trained residual is INADMISSIBLE)
+  nonempty cells: 0/1050
+  EMPTY everywhere in the swept grid.
+  closest cell: duty=1.0,fmax=4.0,offset=0, tol +/-0%, lambda=0.9127, s_cert/R = 1.99, binding: s_cert>R_U; largest term = eta
+
+wrote results/stage7_certificate.json (11.4 min)

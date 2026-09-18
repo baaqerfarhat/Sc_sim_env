@@ -66,6 +66,7 @@ class BasePolicy:
         chain.commit(cinfo)
         self.u_prev = np.asarray(u_star, dtype=float)
         cinfo.update({"z": z, "gate": 1, "accepted": True,
+                      "action_src": "candidate",
                       "solve_ms": info.get("solve_time_ms", np.nan),
                       "fallback": bool(info.get("fallback", False)),
                       "u_prop": np.asarray(u_star, dtype=float)})
@@ -166,10 +167,10 @@ class AdaptiveMPCPolicy(BasePolicy):
         self.th = [np.zeros(2) for _ in range(3)]
         self._prev = None
 
-    def _update(self, x_hat, u_applied):
+    def _update(self, x_hat, u_nom_tx):
         from .plant import jetson_nominal_step
         if self._prev is None:
-            self._prev = (x_hat.copy(), np.asarray(u_applied, dtype=float).copy())
+            self._prev = (x_hat.copy(), np.asarray(u_nom_tx, dtype=float).copy())
             return
         xp, up = self._prev
         nom = jetson_nominal_step(xp, up)
@@ -183,7 +184,7 @@ class AdaptiveMPCPolicy(BasePolicy):
             self.Pm[ch] = (Pm - np.outer(gain, phi @ Pm)) / self.lam_forget
             # bounded parameters
             self.th[ch] = np.clip(self.th[ch], -self.clip, self.clip)
-        self._prev = (x_hat.copy(), np.asarray(u_applied, dtype=float).copy())
+        self._prev = (x_hat.copy(), np.asarray(u_nom_tx, dtype=float).copy())
 
     def residual(self, k, x_hat, hist):
         d = np.zeros(6)
@@ -198,7 +199,9 @@ class AdaptiveMPCPolicy(BasePolicy):
 
     def act(self, k, x_hat, ref_prev, chain, hist):
         out = super().act(k, x_hat, ref_prev, chain, hist)
-        self._update(x_hat, out["u_applied"])
+        # Sec 7.4: the identification regressor must use the KNOWN nominal
+        # transmitted wrench associated with the observed increment.
+        self._update(x_hat, out["u_nominal_transmitted"])
         return out
 
 
@@ -236,7 +239,8 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         self.eta = float(eta)
         self.R = R
         self.stats.update({"n_reject": 0, "n_would_reject": 0, "n_gate_off": 0,
-                           "n_active": 0})
+                           "n_active": 0, "n_supervisor": 0,
+                           "n_first_action_fail": 0})
 
     def context(self, k, x_hat, hist):
         return self._z
@@ -256,69 +260,125 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         r_now, r_next = ref_prev[0], ref_prev[1]
         e_k = CT.error_coords(x_hat, r_now)
 
-        # ---- eligibility, decided from PRE-ACTION information (Eq. 19) ----
-        # Eligibility says whether the GUARANTEE applies at this step; it does not
-        # switch the supervision off. The acceptance check enforces a decrease in
-        # ||e||_P, which is a sound thing to demand whether or not the state is inside
-        # the certified region, and Stage 7 finds that region empty at hardware
-        # authority, so disabling the check outside it would disable it always.
-        # `gate` is therefore REPORTED as the eligible fraction, not used to branch.
-        gate = 1
-        if self.recovery and self.P is not None and self.R is not None:
-            if CT.norm_P(e_k, self.P) > self.R:
-                gate = 0
-        if gate == 0:
-            self.stats["n_gate_off"] += 1
-        else:
-            self.stats["n_active"] += 1
-
-        # ---- stored checked fallback: allocate u_fb from the FROZEN sigma_q ----
-        fb_info = None
+        # ---- stored CHECKED fallback: allocate u_fb from the FROZEN sigma_q ----
+        # Sec 4.4: the fallback only qualifies as the eligible checked fallback if it
+        # PASSES this test. An earlier version computed fb_ok and then transmitted the
+        # fallback regardless, so a failing fallback was routinely sent as though it
+        # had been verified.
+        fb_info, fb_ok, fb_slack = None, False, np.nan
+        u_r = d_r = None
         if self.recovery and self.P is not None and self.K is not None:
             u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
             u_fb = u_r + self.K @ e_k
             _, fb_info = chain.trial(u_fb, x_hat[4])
-            fb_ok, fb_slack = self._check(e_k, fb_info["u_applied"], u_r, d_r,
-                                          r_now, r_next)
-            fb_info["_slack"] = fb_slack
-            fb_info["_ok"] = fb_ok
-            fb_info["_u_prop"] = u_fb
+            u_fb_tx = fb_info["u_nominal_transmitted"]
+            fb_ok, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
+            fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain))
+            fb_info.update(_slack=fb_slack, _ok=fb_ok, _u_prop=u_fb)
 
-        # ---- solve the MPC ----
-        u_star, info = self.mpc.solve(x_hat, ref_prev, self.u_prev, dres)
-        if info.get("fallback"):
-            self.stats["n_fallback"] += 1
+        # ---- pre-action eligibility (Eq. 19), now a real branch ----
+        # Two conditions decided from information available BEFORE acting: the state
+        # is inside the eligible radius, and a verified fallback exists for it. If
+        # either fails the guarantee cannot be claimed, so the fixed supervisor acts
+        # and the sample is recorded as supervisor-driven rather than as a quiet
+        # success.
+        eligible = True
+        if self.recovery and self.P is not None and self.R is not None:
+            if CT.norm_P(e_k, self.P) > self.R:
+                eligible = False
+        if self.recovery and self.P is not None and self.K is not None and not fb_ok:
+            eligible = False
+        gate = int(eligible)
+        self.stats["n_active" if eligible else "n_gate_off"] += 1
 
-        chosen, accepted, slack = None, True, np.nan
-        if not info.get("fallback"):
-            _, cand = chain.trial(u_star, x_hat[4])
-            if self.check_mode != "off" and fb_info is not None:
-                u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
-                ok, slack = self._check(e_k, cand["u_applied"], u_r, d_r,
-                                        r_now, r_next)
-                if ok or self.check_mode == "monitor":
-                    # monitor still records the slack and the would-be verdict, but
-                    # transmits the candidate regardless
-                    chosen, accepted = cand, bool(ok)
-                    if not ok:
-                        self.stats["n_would_reject"] += 1
-                else:
-                    # rejected: transmit the STORED checked fallback instead
-                    self.stats["n_reject"] += 1
-                    chosen, accepted = fb_info, False
-            else:
-                chosen, accepted = cand, True
+        chosen, accepted, slack, src = None, True, np.nan, "candidate"
+
+        # In MONITOR mode eligibility is recorded but not acted on. That is the whole
+        # purpose of the mode: eta and R have to be fitted to slacks observed while
+        # the machinery is not yet diverting the action, otherwise the thresholds
+        # depend on themselves and the calibration measures the supervisor rather
+        # than the candidate it is supposed to characterise.
+        if self.recovery and not eligible and self.check_mode == "enforce":
+            u_sup = self._supervisor(x_hat, chain)
+            _, chosen = chain.trial(u_sup, x_hat[4])
+            chosen["_u_prop"] = u_sup
+            accepted, src = False, "supervisor"
+            self.stats["n_supervisor"] += 1
+            info = {"fallback": False, "solve_time_ms": 0.0}
         else:
-            # solver failure: use the stored checked fallback if one exists
-            chosen = (fb_info if fb_info is not None
-                      else chain.trial(u_star, x_hat[4])[1])
-            accepted = False
+            u_star, info = self.mpc.solve(x_hat, ref_prev, self.u_prev, dres)
+            if info.get("fallback"):
+                self.stats["n_fallback"] += 1
+                # optimiser failure or deadline: the stored PASSING fallback
+                chosen, accepted, src = fb_info, False, "fallback_solver_fail"
+                if chosen is None:
+                    _, chosen = chain.trial(u_star, x_hat[4])
+                    src = "unchecked_solver_fallback"
+            else:
+                # Sec 4.2: the manuscript's Eq. (15) carries a FIRST-ACTION norm
+                # condition, WITHOUT the post-allocation allowance eta:
+                #   ||A e + B du_0 + d^r||_P <= lam ||e||_P + ||d^r||_P.
+                # The OSQP problem solved above is a quadratic program and does not
+                # acquire that conic constraint by having its weights changed, so it
+                # is NOT enforced inside the optimisation. This is a declared
+                # approximation: the condition is instead verified independently here,
+                # on the returned proposal, before the candidate is allowed to be
+                # called feasible. A proposal that fails it is not a feasible candidate
+                # and is discarded in favour of the checked fallback.
+                first_ok = True
+                if self.recovery and self.P is not None and u_r is not None:
+                    A_e, B_e = CT.error_jacobians(r_now, r_next)
+                    lhs = CT.norm_P(A_e @ e_k + B_e @ (np.asarray(u_star) - u_r)
+                                    + d_r, self.P)
+                    rhs = (self.lam * CT.norm_P(e_k, self.P)
+                           + CT.norm_P(d_r, self.P))
+                    first_ok = bool(lhs <= rhs)
+                    self.stats["n_first_action_fail"] += int(not first_ok)
 
+                if not first_ok and self.check_mode == "enforce":
+                    # no timely FEASIBLE candidate exists, so the stored passing
+                    # fallback is transmitted
+                    chosen, accepted, src = fb_info, False, "fallback_first_action"
+                else:
+                    _, cand = chain.trial(u_star, x_hat[4])
+                    cand["_u_prop"] = u_star
+                    cand["_first_action_ok"] = first_ok
+                    if self.check_mode != "off" and fb_info is not None:
+                        u_cand_tx = cand["u_nominal_transmitted"]
+                        ok, slack = self._check(e_k, u_cand_tx, u_r, d_r,
+                                                r_now, r_next)
+                        ok = bool(ok and self._admissible(u_cand_tx, chain))
+                        if ok or self.check_mode == "monitor":
+                            # monitor records the slack and the would-be verdict but
+                            # transmits the candidate regardless
+                            chosen, accepted = cand, bool(ok)
+                            if not ok:
+                                self.stats["n_would_reject"] += 1
+                        else:
+                            self.stats["n_reject"] += 1
+                            chosen, accepted, src = (fb_info, False,
+                                                     "fallback_checked")
+                    else:
+                        chosen, accepted = cand, True
+
+        if chosen is None:
+            # only reachable if a rejection path fired without a stored fallback,
+            # which means the recovery machinery was partially configured; fail loudly
+            # rather than transmitting something unexamined
+            raise RuntimeError(
+                f"{self.name}: no command selected at step {k} (src={src}). A "
+                f"rejection path fired with no stored fallback available.")
         chain.commit(chosen)
-        u_prop = chosen.get("_u_prop", u_star)
-        self.u_prev = np.asarray(u_prop, dtype=float)
+        u_prop = chosen.get("_u_prop", np.zeros(3))
+        # Sec 4.1: the residual is evaluated at the input actually transmitted at
+        # this transition, which is what training uses. Carrying the previous
+        # PROPOSED wrench forward instead made the deployed predictor inconsistent
+        # with its own training data whenever allocation saturated.
+        self.u_prev = np.asarray(chosen["u_nominal_transmitted"], dtype=float)
         chosen.update({"z": z, "gate": gate, "accepted": bool(accepted),
                        "slack_cmd": float(slack) if np.isfinite(slack) else np.nan,
+                       "slack_fb": float(fb_slack),
+                       "action_src": src,
                        "e_P": (CT.norm_P(e_k, self.P) if self.P is not None
                                else np.nan),
                        "solve_ms": info.get("solve_time_ms", np.nan),
@@ -331,16 +391,115 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         avg = chain.fmax * (chain.duty_ceiling / C.TS)
         return np.array([2.0 * avg, 2.0 * avg, 4.0 * 0.2 * avg])
 
-    def _check(self, e_k, u_applied, u_r, d_r, r_now, r_next):
+    def _check(self, e_k, u_nom_tx, u_r, d_r, r_now, r_next):
         """Post-allocation acceptance check, Eq. (18).
 
             ||A e + B(u - u^r) + d^r||_P <= lam ||e||_P + ||d^r||_P + eta
 
-        evaluated at the TRANSMITTED-equivalent wrench, not the pre-allocation
-        proposal.
+        evaluated at the NOMINAL-EQUIVALENT TRANSMITTED wrench. That quantity is a
+        function of the commanded pulses only, so this check contains no hidden
+        fault information; an earlier version evaluated it at the post-fault wrench,
+        which let the check see the fault before the controller was entitled to.
         """
         A, B = CT.error_jacobians(r_now, r_next)
-        lhs = CT.norm_P(A @ e_k + B @ (np.asarray(u_applied) - u_r) + d_r, self.P)
+        lhs = CT.norm_P(A @ e_k + B @ (np.asarray(u_nom_tx) - u_r) + d_r, self.P)
         rhs = (self.lam * CT.norm_P(e_k, self.P) + CT.norm_P(d_r, self.P)
                + self.eta)
         return bool(lhs <= rhs), float(rhs - lhs)
+
+    def _admissible(self, u_nom_tx, chain):
+        """u_k in U: the declared convex command budget."""
+        lim = self._achievable(chain)
+        return bool(np.all(np.abs(np.asarray(u_nom_tx)) <= lim + 1e-9))
+
+    def _supervisor(self, x_hat, chain):
+        """The fixed supervisor used when eligibility fails.
+
+        Sec 4.4 is explicit that this is not automatically safe, so its use is
+        counted and its physical outcome scored like any other action rather than
+        treated as an inactive sample.
+        """
+        u = np.array([-C.FALLBACK_KP_POS * x_hat[2],
+                      -C.FALLBACK_KP_POS * x_hat[3],
+                      -C.FALLBACK_KP_HEAD * x_hat[5]])
+        return np.clip(u, [-C.FALLBACK_CLIP_F, -C.FALLBACK_CLIP_F,
+                           -C.FALLBACK_CLIP_M],
+                       [C.FALLBACK_CLIP_F, C.FALLBACK_CLIP_F, C.FALLBACK_CLIP_M])
+
+
+class NominalRecoveryPolicy(LearnedContextPolicy):
+    """M0: the SAME recovery controller structure with NO learned residual.
+
+    Same pseudo-Huber cost, horizon, feedforward, affine model, acceptance check,
+    eligibility rule, supervisor, allocator and solver handling as M3; the learned
+    residual is identically zero and the context is a constant zero vector. This
+    isolates the benefit of the learned predictor with every other component held
+    comparable, which no variant in the earlier campaign did: `zero_context` also
+    dropped the entire recovery apparatus and the pseudo-Huber cost, so it confounded
+    the residual with the controller.
+    """
+    name = "nominal_recovery"
+    uses_context = False
+
+    def __init__(self, checkpoint, **kw):
+        # a checkpoint is still loaded so the architecture and normalisation metadata
+        # match, but neither the encoder nor the residual head is ever consulted
+        super().__init__(checkpoint, **kw)
+
+    def residual(self, k, x_hat, hist):
+        self._z = np.zeros(C.D_LATENT)
+        return np.zeros(6)
+
+
+class FallbackOnlyPolicy(LearnedContextPolicy):
+    """M5: the checked fallback feedback ONLY, with no MPC planning.
+
+    Retains the context-conditioned feedforward, the gain K, the allocator, the
+    acceptance check, the eligibility rule and the supervisor, so the single thing
+    removed relative to M3 is the constrained optimisation. If M3 does not beat this,
+    the measured performance is coming from the fallback and the eligibility logic
+    rather than from MPC planning.
+    """
+    name = "fallback_only"
+
+    def act(self, k, x_hat, ref_prev, chain, hist):
+        self.stats["n_steps"] += 1
+        # the context and residual are still computed: the feedforward is
+        # context-conditioned in M3, and removing that too would confound MPC
+        # planning with the learned feedforward
+        self.residual(k, x_hat, hist)
+        z = self._z
+        r_now, r_next = ref_prev[0], ref_prev[1]
+        e_k = CT.error_coords(x_hat, r_now)
+
+        u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
+        u_fb = u_r + self.K @ e_k
+        _, fb = chain.trial(u_fb, x_hat[4])
+        u_fb_tx = fb["u_nominal_transmitted"]
+        fb_ok, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
+        fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain))
+
+        eligible = fb_ok
+        if self.R is not None and CT.norm_P(e_k, self.P) > self.R:
+            eligible = False
+
+        if eligible:
+            chosen, src = fb, "fallback_only"
+            chosen["_u_prop"] = u_fb
+            self.stats["n_active"] += 1
+        else:
+            u_sup = self._supervisor(x_hat, chain)
+            _, chosen = chain.trial(u_sup, x_hat[4])
+            chosen["_u_prop"] = u_sup
+            src = "supervisor"
+            self.stats["n_gate_off"] += 1
+            self.stats["n_supervisor"] += 1
+
+        chain.commit(chosen)
+        self.u_prev = np.asarray(chosen["u_nominal_transmitted"], dtype=float)
+        chosen.update({"z": z, "gate": int(eligible), "accepted": bool(fb_ok),
+                       "slack_cmd": float(fb_slack), "slack_fb": float(fb_slack),
+                       "action_src": src, "solve_ms": 0.0, "fallback": False,
+                       "e_P": CT.norm_P(e_k, self.P),
+                       "u_prop": np.asarray(chosen["_u_prop"], dtype=float)})
+        return chosen

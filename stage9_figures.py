@@ -38,16 +38,19 @@ plt.rcParams.update({
 })
 
 METHOD_LABEL = {
-    "zero_context": "zero-context (hardware)",
-    "constant_context": "constant context (trained)",
-    "adaptive_mpc": "adaptive MPC",
-    "no_impact": r"no behavioural loss ($\lambda_I{=}0$)",
-    "full": "full method",
-    "full_no_check": "full, no post-alloc check",
+    "zero_context": "HW  zero-context (hardware)",
+    "nominal_recovery": "M0  nominal, no residual",
+    "constant_context": "M1  constant context",
+    "no_impact": r"M2  changing context ($\lambda_I{=}0$)",
+    "full": "M3  + behavioural supervision",
+    "full_no_check": "M4  M3, no post-alloc check",
+    "fallback_only": "M5  checked fallback only",
+    "adaptive_mpc": "M6  adaptive MPC",
 }
-MC = {"zero_context": "#7f7f7f", "constant_context": "#9467bd",
-      "adaptive_mpc": "#8c564b", "no_impact": "#1f77b4",
-      "full": "#d62728", "full_no_check": "#ff9896"}
+MC = {"zero_context": "#7f7f7f", "nominal_recovery": "#2ca02c",
+      "constant_context": "#9467bd", "adaptive_mpc": "#8c564b",
+      "no_impact": "#1f77b4", "full": "#d62728",
+      "full_no_check": "#ff9896", "fallback_only": "#17becf"}
 COND_LABEL = {"healthy": "healthy", "actuator": "actuation fault",
               "perception": "perception degr.", "combined": "combined"}
 
@@ -299,7 +302,7 @@ def fig_trial(tr, meta):
 
     # 4. duties / events
     a = ax[3]
-    dt_on = np.array(tr["dt_on"])
+    dt_on = np.array(tr["pulse_command_s"])
     a.plot(t, dt_on.sum(1) / C.TS, color="#1f77b4", lw=0.8,
            label="total commanded duty / slot")
     a.plot(t, np.array(tr["accel"]), color="#ff7f0e", lw=0.7, alpha=0.8,

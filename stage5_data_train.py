@@ -24,6 +24,7 @@ import torch
 
 from scsim import config as C
 from scsim import scenarios as S
+from scsim import reference as R
 from scsim.context import (ContextModel, probe_signature, set_seed,
                            signature_distance, SIG_COMPONENT_WEIGHTS)
 from scsim.mpc import HardwareMPC
@@ -40,6 +41,21 @@ os.makedirs("results", exist_ok=True)
 SPLIT_SIZES = {"train": 40, "dev": 10, "fitting": 12, "calibration": 12, "test": 16}
 PROBE_STEPS = 60          # 6 s probe branch
 PROBE_EVERY = 40          # candidate probe anchors within an episode
+
+# Sec 5.1: documented probe initial-condition groups. Every branch assigned to a
+# group starts from EXACTLY this physical state, whatever its parent episode was
+# doing, so a signature distance between two branches in the same group reflects
+# their impairments and not their initial conditions. States span the operating
+# region the task actually visits: near both waypoints, at rest and drifting, and
+# at a nonzero heading so the body/world distinction is exercised.
+#          [ px,    py,   vx,    vy,    psi,   r  ]
+PROBE_GROUPS = np.array([
+    [0.00, -0.50, 0.00, -0.05, 0.00, 0.00],   # early transit, drifting -y
+    [0.00, -2.00, 0.00, 0.00, 0.00, 0.00],    # at waypoint 1, at rest
+    [0.50, -2.00, 0.04, 0.00, 0.30, 0.00],    # mid second leg, yawed
+    [1.00, -2.00, 0.00, 0.00, 0.00, 0.00],    # at waypoint 2, at rest
+    [0.20, -1.00, -0.03, -0.03, -0.40, 0.05],  # off-path, yawed and rotating
+], dtype=float)
 EXPLORE_STD = 0.35        # behaviour-policy exploration on the proposed wrench
 
 
@@ -48,29 +64,39 @@ EXPLORE_STD = 0.35        # behaviour-policy exploration on the proposed wrench
 # ==========================================================================
 def collect_one(job):
     """Run one parent episode and its probe branches."""
-    ep_id, split, condition, seed = job
+    ep_id, split, condition, seed, family = job
     rng = np.random.default_rng(seed)
-    sc = S.make_condition(condition, rng, reference="step")
+    sc = S.make_condition(condition, rng, reference=family)
 
     log = run_episode(seed=seed, steps=C.EPISODE_STEPS, estimator_on=True,
                       controller=HardwareMPC(mass=C.MASS, jzz=C.JZZ),
                       **sc.run_kwargs())
     a = log.arrays()
 
-    # ---- probe branches ----
+    # ---- probe branches, in MATCHED initial-condition groups ----
     # A separate simulator branch retains the persistent impairment, resets to a
-    # matched anchor, and runs a prescribed exciting command sequence. Probe
-    # measurements and future outcomes are TRAINING TARGETS ONLY; the encoder never
-    # sees them. Branches inherit the parent's split.
+    # group's PRESCRIBED physical state, and runs a prescribed exciting command
+    # sequence. Probe measurements are TRAINING TARGETS ONLY; the encoder never sees
+    # them. Branches inherit the parent's split.
+    #
+    # The group structure is what makes the signature comparable across episodes. An
+    # earlier version reset each branch to its own parent's state at the anchor step,
+    # so two branches being "paired" started from different positions and velocities
+    # and their signature distance mixed the impairment with the initial condition.
+    # Pairing is now restricted to a common group, so the only thing that differs
+    # within a pair is the impairment the branch inherited.
     probes = []
     anchors = list(range(int(sc.onset_step) + C.HISTORY_L + 5,
                          C.EPISODE_STEPS - 5, PROBE_EVERY))
     for ai, k_anchor in enumerate(anchors):
-        x_anchor = a["x_true"][k_anchor].copy()
-        plog = run_probe_branch(sc, x_anchor, seed=seed * 1000 + ai)
+        gi = ai % len(PROBE_GROUPS)
+        x_anchor = PROBE_GROUPS[gi].copy()
+        # probe RNG is keyed on the GROUP, not the anchor index, so the estimator
+        # warm-up and VO draws are the same across parents within a group
+        plog = run_probe_branch(sc, x_anchor, seed=900_000 + gi)
         q, ok, exc = probe_signature(plog)
         if q is not None:
-            probes.append({"k": int(k_anchor), "q": q.tolist(),
+            probes.append({"k": int(k_anchor), "group": int(gi), "q": q.tolist(),
                            "ok": bool(ok), "exc": float(exc)})
 
     return {
@@ -78,7 +104,7 @@ def collect_one(job):
         "scenario": sc.to_dict(),
         "x_true": a["x_true"].astype(np.float32),
         "x_hat": a["x_hat"].astype(np.float32),
-        "u_applied": a["u_applied"].astype(np.float32),
+        "u_nom_tx": a["u_nom_tx"].astype(np.float32),
         "u_cmd": a["u_cmd"].astype(np.float32),
         "innov": a["innov"].astype(np.float32),
         "pose_valid": a["pose_valid"].astype(np.uint8),
@@ -114,20 +140,20 @@ def run_probe_branch(sc, x_anchor, seed):
                            0.35 * np.sin(ph / 2.0 + 0.7)])
         obs = vo.observe(x, k)
         est.update(obs, C.TS)
-        u_applied, cinfo = chain(u_star, x[4])
-        xn = P.plant_step(x, cinfo["dt_on"], x[4],
+        u_nom_tx, cinfo = chain(u_star, x[4])
+        xn = P.plant_step(x, cinfo["pulse_actual_s"],
                           eta_smooth=None if sc.eta_smooth is None
                           else np.array(sc.eta_smooth),
                           mass=sc.mass, jzz=sc.jzz, drag=sc.drag,
                           yaw_damp=sc.yaw_damp)
         xs.append(x.copy())
-        us.append(u_applied.copy())
+        us.append(u_nom_tx.copy())
         iv.append(est.innov.copy())
         pv.append(bool(obs.get("valid", True)))
         rs.append(np.concatenate([x_anchor[:2], np.zeros(4)]))
         x = xn
     xs.append(x.copy())
-    return {"x_true": np.array(xs), "u_applied": np.array(us),
+    return {"x_true": np.array(xs), "u_nom_tx": np.array(us),
             "innov": np.array(iv), "pose_valid": np.array(pv),
             "ref_score": np.array(rs + [rs[-1]])}
 
@@ -148,11 +174,17 @@ def main():
         blob = np.load(cache, allow_pickle=True)
         episodes = list(blob["episodes"])
     else:
+        # Sec 5.2: TRAIN_FAMILIES are both present in the data, alternating within
+        # each (split, condition) cell so every cell is balanced across families.
+        # The cross-reference term in L_impact is only meaningful if more than one
+        # family exists to pair across. The `transfer` family is deliberately absent
+        # here and reserved for the held-out transfer evaluation.
         jobs, ep_id, seed = [], 0, 10_000
         for split, n in SPLIT_SIZES.items():
             for cond in S.MAIN_CONDITIONS:
-                for _ in range(n):
-                    jobs.append((ep_id, split, cond, seed))
+                for i in range(n):
+                    fam = R.TRAIN_FAMILIES[i % len(R.TRAIN_FAMILIES)]
+                    jobs.append((ep_id, split, cond, seed, fam))
                     ep_id += 1
                     seed += 1
         n_tot = len(jobs)
@@ -188,6 +220,37 @@ def main():
               f"{len(ds[split]['feats']):6d} windows, "
               f"{len(ds[split]['pairs']):5d} signature pairs")
 
+    # Sec 5.5: a split manifest straight from the metadata, so "all generated data"
+    # and "data used for training" can never be conflated again. The earlier report
+    # quoted the 360-episode total as though it were the training set; the training
+    # portion is the `train` row alone.
+    split_manifest = {}
+    for split in SPLIT_SIZES:
+        eps = [e for e in episodes if e["split"] == split]
+        pr = [p for e in eps for p in e["probes"]]
+        split_manifest[split] = {
+            "parent_episodes": len(eps),
+            "control_steps": int(sum(len(e["x_hat"]) for e in eps)),
+            "windows": int(len(ds[split]["feats"])),
+            "signature_pairs": int(len(ds[split]["pairs"])),
+            "probe_branches": len(pr),
+            "probe_branches_excited": sum(1 for p in pr if p["ok"]),
+            "probe_extra_transitions": len(pr) * PROBE_STEPS,
+            "families": sorted({e["scenario"].get("reference", "step")
+                                for e in eps}),
+        }
+    print("\nsplit manifest (Sec 5.5: training data is the `train` row only)")
+    print(f"  {'split':12s} {'parents':>8s} {'steps':>8s} {'windows':>8s} "
+          f"{'pairs':>7s} {'probes':>7s}")
+    for s, m in split_manifest.items():
+        print(f"  {s:12s} {m['parent_episodes']:8d} {m['control_steps']:8d} "
+              f"{m['windows']:8d} {m['signature_pairs']:7d} "
+              f"{m['probe_branches']:7d}")
+    tot = {k: sum(m[k] for m in split_manifest.values())
+           for k in ("parent_episodes", "control_steps", "windows")}
+    print(f"  {'ALL':12s} {tot['parent_episodes']:8d} {tot['control_steps']:8d} "
+          f"{tot['windows']:8d}   <- total generated, NOT the training budget")
+
     # normalisation from TRAINING data only
     tr = ds["train"]
     q_all = np.array([p["q"] for e in episodes if e["split"] == "train"
@@ -197,14 +260,62 @@ def main():
 
     results = {"dataset": {"n_episodes": len(episodes), "n_transitions": n_trans,
                            "n_probe_branches": n_probe, "n_probe_excited": n_ok,
-                           "probe_extra_transitions": n_probe * PROBE_STEPS},
+                           "probe_extra_transitions": n_probe * PROBE_STEPS,
+                           "split_manifest": split_manifest,
+                           "train_families": list(R.TRAIN_FAMILIES),
+                           "transfer_family_heldout": R.TRANSFER_FAMILY,
+                           "probe_groups": PROBE_GROUPS.tolist()},
                "runs": {}}
 
     # ------------------------------------------------------------------
-    # train: full (lambda_I > 0) and ablation (lambda_I = 0), 3 seeds
+    # Sec 5.3: select lambda_I on a declared DEVELOPMENT grid, with one seed, and
+    # freeze it before the final comparison. The selection metric is dev one-step
+    # prediction, the same fixed rule used for checkpoint selection; the final test
+    # table is never consulted. If the grid selects 0, that IS the finding: the
+    # selected model then demonstrates no behavioural-supervision benefit, and a
+    # positive-weight model survives only as a labelled ablation.
     # ------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("lambda_I development grid (seed 0, dev one-step prediction)")
+    print("=" * 70)
+    grid = [0.0, 0.01, 0.1, 1.0]
+    grid_rows = []
+    for lam in grid:
+        tag = f"grid_lam{lam:g}"
+        out = train_one(ds, q_mu, q_sd, seed=0, lambda_i=lam, tag=tag)
+        grid_rows.append({"lambda_i": lam, "dev_l1": out["dev_l1"],
+                          "impact_final": out["history"][-1]["impact"]})
+        print(f"  lambda_I = {lam:<5g} dev one-step weighted MSE = {out['dev_l1']:.6f}")
+    best = min(grid_rows, key=lambda r: r["dev_l1"])
+    lam_sel = float(best["lambda_i"])
+    results["lambda_grid"] = {
+        "grid": grid, "rows": grid_rows, "selected": lam_sel,
+        "selection_metric": "dev one-step weighted MSE",
+        "selected_on": "dev split, seed 0, before any test run",
+        "caveat": "This selection metric is prediction accuracy, which is precisely "
+                  "what the behavioural term trades against, so the rule is not "
+                  "neutral towards the mechanism. It is nonetheless the rule declared "
+                  "in advance and it is honoured here. The positive-weight model is "
+                  "therefore carried forward as a labelled ablation and evaluated on "
+                  "the axes the behavioural loss actually targets - closed-loop "
+                  "tracking, transfer under held-out shifts, and behavioural "
+                  "retrieval - so the mechanism is not dismissed on a metric it was "
+                  "never meant to improve."}
+    print(f"\n  SELECTED lambda_I = {lam_sel:g} "
+          f"(dev MSE {best['dev_l1']:.6f})")
+    if lam_sel == 0.0:
+        print("  NOTE: the grid selected ZERO. The selected model therefore carries "
+              "no behavioural\n        supervision, and `full` below is reported as "
+              "an ablation at the largest grid value.")
+
+    # the deployed `full` uses the SELECTED weight; if selection chose 0 we still
+    # train a positive-weight variant so the mechanism can be reported as an ablation
+    lam_full = lam_sel if lam_sel > 0 else max(grid)
+    results["lambda_full_used"] = lam_full
+    results["lambda_full_is_ablation"] = bool(lam_sel == 0.0)
+
     for seed in range(C.N_SEEDS):
-        for variant, lam_i in (("full", C.LAMBDA_I), ("no_impact", 0.0)):
+        for variant, lam_i in (("full", lam_full), ("no_impact", 0.0)):
             tag = f"{variant}_s{seed}"
             print(f"\n--- training {tag}  (lambda_I = {lam_i}) ---")
             out = train_one(ds, q_mu, q_sd, seed=seed, lambda_i=lam_i, tag=tag)
@@ -232,7 +343,7 @@ def build_windows(eps):
     pairs = []
     sig_by_ep = {}
     for ei, e in enumerate(eps):
-        arrs = {"x_hat": e["x_hat"].astype(float), "u_applied": e["u_applied"].astype(float),
+        arrs = {"x_hat": e["x_hat"].astype(float), "u_nom_tx": e["u_nom_tx"].astype(float),
                 "pose_valid": e["pose_valid"].astype(bool), "innov": e["innov"].astype(float)}
         T = len(arrs["x_hat"])
         for k in range(C.HISTORY_L, T - 1):
@@ -240,22 +351,33 @@ def build_windows(eps):
             feats.append(f / FEATURE_SCALE)
             masks.append(m)
             xh.append(arrs["x_hat"][k])
-            u.append(arrs["u_applied"][k])
+            u.append(arrs["u_nom_tx"][k])
             target.append(arrs["x_hat"][k + 1])
             ep_idx.append(ei)
             ks.append(k)
-        sig_by_ep[ei] = [(p["k"], np.array(p["q"])) for p in e["probes"] if p["ok"]]
+        sig_by_ep[ei] = [(p["k"], np.array(p["q"]), int(p.get("group", -1)),
+                          str(e["scenario"].get("reference", "step")))
+                         for p in e["probes"] if p["ok"]]
 
-    # anchor-matched signature pairs across DIFFERENT parent episodes, including
-    # different reference families, to encourage transferable behavioural structure
+    # Signature pairs across DIFFERENT parent episodes but WITHIN a matched probe
+    # group, so the pair differs in impairment (and possibly reference family) and
+    # not in initial condition. Cross-family pairs are tagged so the cross-reference
+    # claim can be evaluated separately from the within-family one.
     rng = np.random.default_rng(0)
-    keys = [(ei, k, q) for ei, lst in sig_by_ep.items() for k, q in lst]
-    for i in range(len(keys)):
+    keys = [(ei, k, q, g, fam) for ei, lst in sig_by_ep.items()
+            for k, q, g, fam in lst]
+    by_group = {}
+    for i, kk in enumerate(keys):
+        by_group.setdefault(kk[3], []).append(i)
+    for i, kk in enumerate(keys):
+        pool = by_group.get(kk[3], [])
+        if len(pool) < 2:
+            continue
         for _ in range(3):
-            j = int(rng.integers(0, len(keys)))
+            j = int(pool[rng.integers(0, len(pool))])
             if keys[j][0] == keys[i][0]:
                 continue     # different parent episodes only
-            pairs.append((i, j))
+            pairs.append((i, j, int(keys[i][4] != keys[j][4])))
 
     out = {"feats": np.array(feats, dtype=np.float32),
            "masks": np.array(masks, dtype=np.float32),
@@ -282,7 +404,7 @@ def build_windows(eps):
         if not stable:
             continue
         ms_idx.append(w)
-        ms_u.append(e["u_applied"][k:k + H].astype(np.float32))
+        ms_u.append(e["u_nom_tx"][k:k + H].astype(np.float32))
         ms_x.append(e["x_hat"][k:k + H + 1].astype(np.float32))
     out["multistep"] = {
         "idx": np.array(ms_idx, dtype=np.int64),
@@ -296,7 +418,7 @@ def build_windows(eps):
 
 def _sig_window(ds, key):
     """The ordinary history window co-located with a probe anchor."""
-    ei, k, q = key
+    ei, k = key[0], key[1]
     sel = np.flatnonzero((ds["ep_idx"] == ei) & (ds["k"] == k))
     return int(sel[0]) if len(sel) else None
 
@@ -336,7 +458,7 @@ def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
     if lambda_i > 0 and len(tr["pairs"]):
         pi_, pd_, pw_ = [], [], []
         wcache = {}
-        for i, j in tr["pairs"]:
+        for i, j, cross_family in tr["pairs"]:
             for t in (i, j):
                 if t not in wcache:
                     wcache[t] = _sig_window(tr, tr["sig_keys"][t])
@@ -346,10 +468,11 @@ def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
             qi, qj = tr["sig_keys"][i][2], tr["sig_keys"][j][2]
             pi_.append((wi, wj))
             pd_.append(signature_distance(qi, qj, q_mu, q_sd))
-            # pairs from different conditions act as the cross-reference family term
-            ci = tr["eps"][tr["sig_keys"][i][0]]["condition"]
-            cj = tr["eps"][tr["sig_keys"][j][0]]["condition"]
-            pw_.append(1.0 + (C.LAMBDA_CROSS if ci != cj else 0.0))
+            # the cross-reference term now keys on the REFERENCE FAMILY, which is
+            # what the manuscript claims. Keying it on the impairment condition, as
+            # an earlier version did, silently substituted one identifier for the
+            # other and never tested cross-reference structure at all.
+            pw_.append(1.0 + (C.LAMBDA_CROSS if cross_family else 0.0))
         if pi_:
             pair_idx = np.array(pi_)
             pair_d = np.array(pd_, dtype=np.float32)
@@ -360,10 +483,18 @@ def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
         np.ones(C.MULTISTEP_H - 1) / (C.MULTISTEP_H - 1), dtype=torch.float32)
 
     hist, best = [], None
-    rng = np.random.default_rng(seed)
+    # Sec 5.3: THREE INDEPENDENT streams. With one shared generator, the extra
+    # rng.integers call that samples behavioural pairs consumed draws from the same
+    # sequence, so turning L_impact on silently changed every later minibatch order
+    # and multistep sample too. `full` and `no_impact` were then not the matched
+    # pair they were reported to be. Spawning from one seed keeps each stream
+    # reproducible while making them independent of one another.
+    ss = np.random.SeedSequence(seed)
+    rng_batch, rng_ms, rng_pair = (np.random.default_rng(s)
+                                   for s in ss.spawn(3))
     for ep in range(epochs):
         model.train()
-        perm = rng.permutation(n)
+        perm = rng_batch.permutation(n)
         tot = {"l1": 0.0, "lh": 0.0, "imp": 0.0, "nb": 0}
         for b0 in range(0, n, batch):
             idx = perm[b0:b0 + batch]
@@ -376,8 +507,8 @@ def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
             # ---- frozen-context multistep, L_H ----
             l_h = torch.tensor(0.0)
             if len(ms_idx):
-                sel = torch.tensor(rng.integers(0, len(ms_idx),
-                                                size=min(64, len(ms_idx))))
+                sel = torch.tensor(rng_ms.integers(0, len(ms_idx),
+                                                   size=min(64, len(ms_idx))))
                 wsel = ms_idx[sel]
                 zh = model.encode(F[wsel], M[wsel])          # context FROZEN at k
                 xcur = ms_x[sel, 0]                          # (b, 6)
@@ -398,7 +529,7 @@ def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
             # ---- behavioural supervision, L_impact ----
             l_imp = torch.tensor(0.0)
             if lambda_i > 0 and len(pair_idx):
-                sel = rng.integers(0, len(pair_idx), size=min(128, len(pair_idx)))
+                sel = rng_pair.integers(0, len(pair_idx), size=min(128, len(pair_idx)))
                 zi = model.encode(F[torch.tensor(pair_idx[sel, 0])],
                                   M[torch.tensor(pair_idx[sel, 0])])
                 zj = model.encode(F[torch.tensor(pair_idx[sel, 1])],

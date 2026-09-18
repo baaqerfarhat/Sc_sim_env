@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 
 from . import config as C
+from .plant import wrap_pi
 
 
 class StepSetpointReference:
@@ -120,9 +121,71 @@ class SmoothFeasibleReference:
         return self.state_at(k * C.TS)
 
 
+class TransferReference:
+    """A HELD-OUT family, used for transfer evaluation only and never for training.
+
+    Sec 5.2 of the corrections plan: a family used for cross-reference training
+    cannot simultaneously be presented as an unseen test family. `step` and `smooth`
+    are both in the training mixture, so a third family is reserved here.
+
+    It differs structurally from both, not just in parameters: a continuously curving
+    figure-of-eight with no rest points and a yaw reference that tracks the path
+    tangent, so heading is never constant. Speed is scaled to the same achievable
+    acceleration so it remains feasible.
+    """
+
+    name = "transfer"
+
+    def __init__(self, start=np.zeros(2), psi_ref=0.0, accel_frac=0.5, period=30.0):
+        self.start = np.asarray(start, dtype=float)
+        self.period = float(period)
+        a_max = accel_frac * C.ANCHORS.accel_chain_pred
+        w = 2.0 * np.pi / self.period
+        # lissajous x = Ax sin(wt), y = Ay sin(2wt); peak accel scales as A w^2
+        self.w = w
+        self.Ay = a_max / (4.0 * w * w)      # the 2w term dominates the acceleration
+        self.Ax = 2.0 * self.Ay
+
+    def state_at(self, t):
+        w, Ax, Ay = self.w, self.Ax, self.Ay
+        px = Ax * np.sin(w * t)
+        py = Ay * np.sin(2.0 * w * t)
+        vx = Ax * w * np.cos(w * t)
+        vy = 2.0 * Ay * w * np.cos(2.0 * w * t)
+        psi = np.arctan2(vy, vx) if (abs(vx) + abs(vy)) > 1e-9 else 0.0
+        # yaw rate by differentiating atan2 of the velocity
+        ax = -Ax * w * w * np.sin(w * t)
+        ay = -4.0 * Ay * w * w * np.sin(2.0 * w * t)
+        sp2 = vx * vx + vy * vy
+        r = (vx * ay - vy * ax) / sp2 if sp2 > 1e-12 else 0.0
+        return np.array([self.start[0] + px, self.start[1] + py, vx, vy,
+                         wrap_pi(psi), r])
+
+    def update(self, x, k=None):
+        self.k = 0 if k is None else k
+        return self.state_at(self.k * C.TS)
+
+    def current(self):
+        return self.state_at(getattr(self, "k", 0) * C.TS)
+
+    def preview(self, N):
+        k = getattr(self, "k", 0)
+        return np.array([self.state_at((k + i) * C.TS) for i in range(N + 1)])
+
+    def scoring_reference(self, k):
+        return self.state_at(k * C.TS)
+
+
+# families that may appear in TRAINING data, and the one reserved for transfer
+TRAIN_FAMILIES = ("step", "smooth")
+TRANSFER_FAMILY = "transfer"
+
+
 def make_reference(family, start=np.zeros(2), psi_ref=0.0):
     if family == "step":
         return StepSetpointReference(start, psi_ref)
     if family == "smooth":
         return SmoothFeasibleReference(start, psi_ref)
+    if family == "transfer":
+        return TransferReference(start, psi_ref)
     raise ValueError(f"unknown reference family {family!r}")

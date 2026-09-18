@@ -1,0 +1,119 @@
+==============================================================================
+STAGE 5  data generation, probe branches, representation training
+==============================================================================
+
+collecting 360 parent episodes (5 splits x 4 conditions)
+  + probe branches at up to 11 anchors each
+   episodes: 360/360 done in 75s (18 workers)
+   episodes: 360/360 done in 75s (18 workers)
+
+dataset: 360 parent episodes, 216000 transitions, 3832 probe branches (3832 sufficiently excited)
+  offline cost of behavioural supervision: 3832 extra branches x 60 steps = 229920 extra transitions
+
+building windows (split by parent episode, no leakage)
+  train        160 episodes ->  94240 windows,  5089 signature pairs
+  dev           40 episodes ->  23560 windows,  1230 signature pairs
+  fitting       48 episodes ->  28272 windows,  1510 signature pairs
+  calibration   48 episodes ->  28272 windows,  1483 signature pairs
+  test          64 episodes ->  37696 windows,  2013 signature pairs
+
+--- training full_s0  (lambda_I = 1.0) ---
+    epoch 0  L1 0.002196  L_H 0.003422  L_impact 0.13547  dev_L1 0.001718
+    epoch 1  L1 0.002119  L_H 0.003286  L_impact 0.04354  dev_L1 0.001707
+    epoch 2  L1 0.002100  L_H 0.003159  L_impact 0.02306  dev_L1 0.001680
+    epoch 3  L1 0.002085  L_H 0.003112  L_impact 0.01579  dev_L1 0.001662
+    epoch 4  L1 0.002061  L_H 0.003135  L_impact 0.01061  dev_L1 0.001651
+    epoch 5  L1 0.002039  L_H 0.002995  L_impact 0.00853  dev_L1 0.001625
+    epoch 6  L1 0.002010  L_H 0.003081  L_impact 0.00695  dev_L1 0.001601
+    epoch 7  L1 0.001985  L_H 0.003057  L_impact 0.00615  dev_L1 0.001573
+    selected epoch 7 (dev_L1 0.001573) -> data/model_full_s0.pt
+
+--- training no_impact_s0  (lambda_I = 0.0) ---
+    epoch 0  L1 0.002142  L_H 0.003374  L_impact 0.00000  dev_L1 0.001633
+    epoch 1  L1 0.001979  L_H 0.002935  L_impact 0.00000  dev_L1 0.001498
+    epoch 2  L1 0.001864  L_H 0.002854  L_impact 0.00000  dev_L1 0.001394
+    epoch 3  L1 0.001741  L_H 0.002775  L_impact 0.00000  dev_L1 0.001329
+    epoch 4  L1 0.001693  L_H 0.002635  L_impact 0.00000  dev_L1 0.001241
+    epoch 5  L1 0.001650  L_H 0.002659  L_impact 0.00000  dev_L1 0.001248
+    epoch 6  L1 0.001642  L_H 0.002638  L_impact 0.00000  dev_L1 0.001249
+    epoch 7  L1 0.001622  L_H 0.002596  L_impact 0.00000  dev_L1 0.001238
+    selected epoch 7 (dev_L1 0.001238) -> data/model_no_impact_s0.pt
+
+--- training full_s1  (lambda_I = 1.0) ---
+    epoch 0  L1 0.002207  L_H 0.003515  L_impact 0.13578  dev_L1 0.001724
+    epoch 1  L1 0.002126  L_H 0.003158  L_impact 0.04785  dev_L1 0.001713
+    epoch 2  L1 0.002118  L_H 0.003097  L_impact 0.02736  dev_L1 0.001688
+    epoch 3  L1 0.002095  L_H 0.003165  L_impact 0.01722  dev_L1 0.001667
+    epoch 4  L1 0.002068  L_H 0.003075  L_impact 0.01191  dev_L1 0.001651
+    epoch 5  L1 0.002041  L_H 0.003117  L_impact 0.00942  dev_L1 0.001690
+    epoch 6  L1 0.002028  L_H 0.003064  L_impact 0.00800  dev_L1 0.001614
+    epoch 7  L1 0.002007  L_H 0.003073  L_impact 0.00709  dev_L1 0.001594
+    selected epoch 7 (dev_L1 0.001594) -> data/model_full_s1.pt
+
+--- training no_impact_s1  (lambda_I = 0.0) ---
+    epoch 0  L1 0.002140  L_H 0.003410  L_impact 0.00000  dev_L1 0.001600
+    epoch 1  L1 0.001978  L_H 0.002978  L_impact 0.00000  dev_L1 0.001532
+    epoch 2  L1 0.001891  L_H 0.002898  L_impact 0.00000  dev_L1 0.001425
+    epoch 3  L1 0.001761  L_H 0.002870  L_impact 0.00000  dev_L1 0.001299
+    epoch 4  L1 0.001694  L_H 0.002714  L_impact 0.00000  dev_L1 0.001264
+    epoch 5  L1 0.001662  L_H 0.002662  L_impact 0.00000  dev_L1 0.001288
+    epoch 6  L1 0.001661  L_H 0.002690  L_impact 0.00000  dev_L1 0.001253
+    epoch 7  L1 0.001640  L_H 0.002637  L_impact 0.00000  dev_L1 0.001247
+    selected epoch 7 (dev_L1 0.001247) -> data/model_no_impact_s1.pt
+
+--- training full_s2  (lambda_I = 1.0) ---
+    epoch 0  L1 0.002200  L_H 0.003539  L_impact 0.13342  dev_L1 0.001728
+    epoch 1  L1 0.002129  L_H 0.003153  L_impact 0.04645  dev_L1 0.001709
+    epoch 2  L1 0.002116  L_H 0.003152  L_impact 0.02507  dev_L1 0.001691
+    epoch 3  L1 0.002101  L_H 0.003179  L_impact 0.01598  dev_L1 0.001679
+    epoch 4  L1 0.002082  L_H 0.003166  L_impact 0.01182  dev_L1 0.001646
+    epoch 5  L1 0.002060  L_H 0.003042  L_impact 0.00844  dev_L1 0.001642
+    epoch 6  L1 0.002041  L_H 0.003058  L_impact 0.00860  dev_L1 0.001624
+    epoch 7  L1 0.002019  L_H 0.002978  L_impact 0.00575  dev_L1 0.001605
+    selected epoch 7 (dev_L1 0.001605) -> data/model_full_s2.pt
+
+--- training no_impact_s2  (lambda_I = 0.0) ---
+    epoch 0  L1 0.002130  L_H 0.003358  L_impact 0.00000  dev_L1 0.001621
+    epoch 1  L1 0.001986  L_H 0.002979  L_impact 0.00000  dev_L1 0.001495
+    epoch 2  L1 0.001885  L_H 0.002886  L_impact 0.00000  dev_L1 0.001461
+    epoch 3  L1 0.001762  L_H 0.002866  L_impact 0.00000  dev_L1 0.001312
+    epoch 4  L1 0.001691  L_H 0.002684  L_impact 0.00000  dev_L1 0.001284
+    epoch 5  L1 0.001661  L_H 0.002703  L_impact 0.00000  dev_L1 0.001253
+    epoch 6  L1 0.001651  L_H 0.002608  L_impact 0.00000  dev_L1 0.001230
+    epoch 7  L1 0.001633  L_H 0.002670  L_impact 0.00000  dev_L1 0.001226
+    selected epoch 7 (dev_L1 0.001226) -> data/model_no_impact_s2.pt
+
+--- training const_s0  (constant context) ---
+    epoch 0  L1 0.002249  L_H 0.003600  L_impact 0.00000  dev_L1 0.001807
+    epoch 1  L1 0.002216  L_H 0.003471  L_impact 0.00000  dev_L1 0.001806
+    epoch 2  L1 0.002215  L_H 0.003458  L_impact 0.00000  dev_L1 0.001800
+    epoch 3  L1 0.002212  L_H 0.003455  L_impact 0.00000  dev_L1 0.001804
+    epoch 4  L1 0.002211  L_H 0.003360  L_impact 0.00000  dev_L1 0.001798
+    epoch 5  L1 0.002210  L_H 0.003432  L_impact 0.00000  dev_L1 0.001805
+    epoch 6  L1 0.002208  L_H 0.003499  L_impact 0.00000  dev_L1 0.001805
+    epoch 7  L1 0.002206  L_H 0.003330  L_impact 0.00000  dev_L1 0.001796
+    selected epoch 7 (dev_L1 0.001796) -> data/model_const_s0.pt
+
+--- training const_s1  (constant context) ---
+    epoch 0  L1 0.002252  L_H 0.003657  L_impact 0.00000  dev_L1 0.001805
+    epoch 1  L1 0.002216  L_H 0.003515  L_impact 0.00000  dev_L1 0.001802
+    epoch 2  L1 0.002214  L_H 0.003568  L_impact 0.00000  dev_L1 0.001802
+    epoch 3  L1 0.002213  L_H 0.003597  L_impact 0.00000  dev_L1 0.001802
+    epoch 4  L1 0.002211  L_H 0.003467  L_impact 0.00000  dev_L1 0.001798
+    epoch 5  L1 0.002209  L_H 0.003389  L_impact 0.00000  dev_L1 0.001800
+    epoch 6  L1 0.002208  L_H 0.003443  L_impact 0.00000  dev_L1 0.001795
+    epoch 7  L1 0.002206  L_H 0.003470  L_impact 0.00000  dev_L1 0.001801
+    selected epoch 6 (dev_L1 0.001795) -> data/model_const_s1.pt
+
+--- training const_s2  (constant context) ---
+    epoch 0  L1 0.002250  L_H 0.003666  L_impact 0.00000  dev_L1 0.001808
+    epoch 1  L1 0.002217  L_H 0.003497  L_impact 0.00000  dev_L1 0.001799
+    epoch 2  L1 0.002214  L_H 0.003550  L_impact 0.00000  dev_L1 0.001804
+    epoch 3  L1 0.002213  L_H 0.003562  L_impact 0.00000  dev_L1 0.001804
+    epoch 4  L1 0.002211  L_H 0.003406  L_impact 0.00000  dev_L1 0.001799
+    epoch 5  L1 0.002209  L_H 0.003415  L_impact 0.00000  dev_L1 0.001795
+    epoch 6  L1 0.002208  L_H 0.003337  L_impact 0.00000  dev_L1 0.001803
+    epoch 7  L1 0.002208  L_H 0.003441  L_impact 0.00000  dev_L1 0.001801
+    selected epoch 5 (dev_L1 0.001795) -> data/model_const_s2.pt
+
+wrote results/stage5_training.json  (26.1 min total)

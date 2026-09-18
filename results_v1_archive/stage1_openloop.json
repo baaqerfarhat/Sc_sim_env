@@ -1,0 +1,178 @@
+{
+  "checks": {
+    "achievable_Fx_2.4N": {
+      "pass": true,
+      "detail": "Fx=2.400 N (target 2.4), Mz=0.000e+00 (couple cancels)"
+    },
+    "achievable_Mz_0.96Nm": {
+      "pass": true,
+      "detail": "Mz=0.9600 N m (target 0.96), |F|=0.000e+00 (pure couple)"
+    },
+    "declared_box_unreachable": {
+      "pass": true,
+      "detail": "declared/achievable = 2.08x force, 2.08x yaw"
+    },
+    "achievable_set": {
+      "force_N": 2.4,
+      "yaw_Nm": 0.96,
+      "declared_force_N": 5.0,
+      "declared_yaw_Nm": 2.0
+    },
+    "duty_band_lower_0.40N": {
+      "pass": true,
+      "detail": "on-time becomes positive at F=0.3980 N (spec ~0.40)"
+    },
+    "duty_band_upper_matches_formula": {
+      "pass": true,
+      "detail": "on-time saturates at F=0.6050 N, matches closed form 0.60499 N"
+    },
+    "spec_discrepancy_duty_upper_edge": {
+      "doc_states_N": 0.65,
+      "formula_gives_N": 0.6049906813004763,
+      "note": "build_scSim.md Sec 5 prose rounds the upper band edge to 0.65 N; the confirmed slope/offset put it at 0.605 N. Formula used. The usable proportional band is [0.398, 0.605] N, 21% narrower than stated, so the duty law is slightly MORE restrictive than the spec implies."
+    },
+    "duty_ceiling_40ms": {
+      "pass": true,
+      "detail": "max on-time 40.000 ms in a 100 ms slot -> duty ceiling 0.40"
+    },
+    "duty_band": {
+      "F_lo_N": 0.39799999999999996,
+      "F_hi_N": 0.605,
+      "usable_band_N": [
+        0.39799999999999996,
+        0.605
+      ],
+      "ceiling_s": 0.04
+    },
+    "min_pulse_stretch_12ms": {
+      "pass": true,
+      "detail": "F=0.0011 N (raw on-time 0.00 ms) -> stretched to 12.0 ms"
+    },
+    "min_pulse_zero_below_thresh": {
+      "pass": true,
+      "detail": "F=0.0010 N -> 0.0 ms (zeroed, not accumulated)"
+    },
+    "realizable_avg_force_set": {
+      "pass": true,
+      "detail": "nonzero average force spans [0.120, 0.400] x F_valve = [0.144, 0.480] N (spec {0} U [0.12,0.40])"
+    },
+    "realizable_set_has_gap": {
+      "pass": true,
+      "detail": "gap between 0 and 0.1440 N is unattainable -> on/off quantization"
+    },
+    "gain_doubles_below_half_cap": {
+      "pass": true,
+      "detail": "request Fx=1.0 N -> 2.000 N (doubled, below half the 5 N cap)"
+    },
+    "gain_noop_above_half_cap": {
+      "pass": true,
+      "detail": "request Fx=4.0 N -> 5.000 N and Mz=0.7 -> 0.800 (both hit the cap; gain is a no-op)"
+    },
+    "fault_skip_rate_30pct": {
+      "pass": true,
+      "detail": "30 skips in 100 cycles at fault_fraction=0.7 (spec ~30%)"
+    },
+    "fault_pattern_regular_3_per_10": {
+      "pass": true,
+      "detail": "first 10 cycles skip mask = 0100010010 -> 3 skips/s at 10 Hz, fixed pattern"
+    },
+    "fault_deterministic_no_rng": {
+      "pass": true,
+      "detail": "identical skip mask on replay (no RNG, nothing seeded)"
+    },
+    "fault_no_thrust_reduction": {
+      "pass": true,
+      "detail": "fmax stays 1.2 N on all eight thrusters at every level"
+    },
+    "fault_pattern": {
+      "skip_mask_first_20": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "skips_per_100": 30
+    },
+    "fault_targets_plusY_both_yaw": {
+      "pass": true,
+      "detail": "T7=FY+MZ- T8=FY+MZ+: both push +Y, yaw signs -0.2/+0.2 cover both directions"
+    },
+    "allocator_yaw_preferred": {
+      "pass": true,
+      "detail": "unachievable request [2.0,0,0.9]: yaw rel-err 0.106 < force rel-err 0.611 (W_tau weights yaw 8x)"
+    },
+    "allocator_no_infeasible_detection": {
+      "pass": true,
+      "detail": "request Fx=5.0 N returns achieved 2.400 N silently, F within bounds (least-squares compromise, no flag)"
+    },
+    "allocator_deadzone": {
+      "pass": true,
+      "detail": "||tau|| < 1e-6 returns zeros"
+    },
+    "allocator_deterministic": {
+      "pass": true,
+      "detail": "strictly convex -> unique and deterministic given history"
+    },
+    "allocator_memory_load_bearing": {
+      "pass": true,
+      "detail": "same tau with different use_hist gives ||dF||=0.0507 -> allocator state must be carried in the certificate domain"
+    },
+    "allocator_kkt_optimal": {
+      "pass": true,
+      "detail": "worst projected-gradient KKT residual over 200 random problems: 8.93e-14 (box-constrained strictly convex QP -> global optimum)"
+    },
+    "allocator_no_better_point_exists": {
+      "pass": true,
+      "detail": "worst objective excess vs L-BFGS-B: 1.42e-14 (<=0 means our solution is at least as good everywhere)"
+    },
+    "chain_avg_force_0.96N": {
+      "pass": true,
+      "detail": "2 thrusters x 1.2 N x 0.40 duty ceiling = 0.960 N average"
+    },
+    "chain_accel_0.038": {
+      "pass": true,
+      "detail": "0.96 N / 25.0 kg = 0.0384 m/s^2"
+    },
+    "chain_accel_inside_measured_band": {
+      "pass": true,
+      "detail": "chain 0.0384 lies inside the measured p95 band [0.025, 0.063] m/s^2 -> independent agreement reproduced"
+    },
+    "accel_agreement": {
+      "chain_avg_force_N": 0.9599999999999999,
+      "chain_accel_mps2": 0.0384,
+      "measured_p95_band": [
+        0.025,
+        0.063
+      ],
+      "measured_median": 0.035
+    },
+    "openloop_saturated_accel_matches_chain": {
+      "pass": true,
+      "detail": "saturated +X open-loop p95 accel = 0.0384 m/s^2 vs chain prediction 0.0384 (agreement within 4 mm/s^2)"
+    },
+    "openloop_saturated_accel_p95": 0.038400000000002876,
+    "fault_degrades_plusY_authority": {
+      "pass": true,
+      "detail": "+Y velocity after 20 s: healthy 0.768 m/s vs faulted 0.538 m/s -> 30.0% authority loss"
+    },
+    "fault_plusY_authority_loss": 0.30000000000001803
+  },
+  "failures": [],
+  "manifest_hash": "155bb5109e93c543"
+}

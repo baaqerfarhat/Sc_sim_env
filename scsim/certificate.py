@@ -266,8 +266,20 @@ def verify_box(P, K, A_b, B_b, E_A, E_B):
     gamma = float(np.linalg.norm(M, 2))
     N = np.abs(Cm) @ (E_A + E_B @ np.abs(K)) @ np.abs(Cinv)
     nu = float(np.sqrt(np.linalg.norm(N, 1) * np.linalg.norm(N, np.inf)))
-    # outward rounding allowance for factorisation / inversion / product / norm
-    rnd = 1.0 + 1e-9
+    # Outward rounding allowance. A blanket 1+1e-9, as used earlier, is not a
+    # justified bound on the errors of a Cholesky factorisation, an explicit inverse,
+    # two matrix products and a norm: the inverse alone contributes a relative error
+    # that grows with the conditioning of C, which here is set by the spread of P's
+    # eigenvalues and is not small. This scales the allowance with that conditioning
+    # and the operation count instead of asserting a constant.
+    #
+    # It is still a standard first-order rounding estimate, NOT verified interval
+    # arithmetic, so it is reported as such: a fully rigorous claim needs an interval
+    # or exact-arithmetic implementation of this chain.
+    u = np.finfo(float).eps / 2.0
+    kappa = float(np.linalg.cond(Cm))
+    n_ops = 6.0          # cholesky, inverse, 3 products, norm
+    rnd = 1.0 + n_ops * NX * u * max(1.0, kappa)
     return gamma * rnd, nu * rnd
 
 
@@ -309,32 +321,60 @@ def residual_budget(P, K, boxes, J_res, lam_target, e_extra=None, tol=1e-4):
     return lo
 
 
-def interval_jacobian_bounds(r_lo, r_hi, mass_iv, jzz_iv, dt=C.TS):
-    """Enclose A(upsilon), B(upsilon) over a box of references and plant parameters.
+def interval_jacobian_bounds(r_lo, r_hi, mass_iv, jzz_iv, dt=C.TS,
+                             psi_now_c=None, psi_next_c=None):
+    """Enclose A(upsilon) - A_b and B(upsilon) - B_b entrywise over the box.
 
-    A = T_{r+}^{-1} A_0 T_r depends on the reference yaw pair through rotations, and
-    B on 1/mass and 1/jzz. Bounds are computed by enclosing each entry.
+    Derived analytically rather than assembled by inspection. With
+    T_r = blkdiag(R(psi_r), R(psi_r), 1, 1) and the linear nominal predictor,
+
+        A = T_{r+}^{-1} A_0 T_r  has  [pp] = [vv] = R(delta),  [pv] = dt R(delta),
+                                      delta = psi - psi_plus,
+        B = T_{r+}^{-1} B_0      has  [p,xy] = (dt^2/2m) R(-psi_plus),
+                                      [v,xy] = (dt/m) R(-psi_plus),
+                                      [omega,z] = dt/jzz.
+
+    So the yaw dependence of BOTH A and B is a full 2x2 rotation block, and every
+    entry of those blocks varies. An earlier version populated only the diagonal
+    entries of E_B and left the yaw-driven off-diagonal terms at exactly zero, which
+    made the enclosure unsound: sampling B over a yaw box of 0.01 rad showed the
+    cross-terms moving by 2e-5 against a returned bound of 0, and E_A was violated by
+    4e-3. Bounds that a sampled counterexample can break certify nothing, so both
+    blocks are now enclosed in full.
+
+    Uses |cos a - cos b| <= |a - b| and |sin a - sin b| <= |a - b|, which hold
+    globally, so no small-angle assumption is involved.
     """
-    # yaw difference across the box drives the rotation mismatch
-    dpsi = 0.5 * (r_hi - r_lo)
-    # |cos a - cos b| <= |a-b| and likewise for sin, so a rotation over an interval
-    # of width w is enclosed by an elementwise w perturbation
-    w = float(abs(dpsi))
-    A0, _ = jetson_nominal_jac(dt, mass_iv[0], jzz_iv[0])
+    lo, hi = float(min(r_lo, r_hi)), float(max(r_lo, r_hi))
+    # design point defaults to the box centre if not supplied
+    pn = 0.5 * (lo + hi) if psi_now_c is None else float(psi_now_c)
+    px = 0.5 * (lo + hi) if psi_next_c is None else float(psi_next_c)
+
+    # ---- A: depends on delta = psi - psi_plus, both in [lo, hi] ----
+    d_lo, d_hi = lo - hi, hi - lo          # attainable range of delta
+    d_c = pn - px                          # delta at the design point
+    dd = max(abs(d_lo - d_c), abs(d_hi - d_c))   # worst |delta - delta_b|
     E_A = np.zeros((NX, NX))
-    # rotation blocks are the only yaw-dependent entries of A
-    for blk in (slice(0, 2), slice(2, 4)):
-        E_A[blk, blk] = w * (1.0 + dt)
-    E_A[0:2, 2:4] = w * dt
-    # B depends on 1/mass and 1/jzz over their intervals
-    m_lo, m_hi = mass_iv
-    j_lo, j_hi = jzz_iv
-    inv_m_spread = abs(1.0 / m_lo - 1.0 / m_hi)
-    inv_j_spread = abs(1.0 / j_lo - 1.0 / j_hi)
+    ones2 = np.ones((2, 2))
+    E_A[0:2, 0:2] = dd * ones2             # R(delta) block, ALL four entries
+    E_A[2:4, 2:4] = dd * ones2
+    E_A[0:2, 2:4] = dt * dd * ones2
+
+    # ---- B: depends on psi_plus in [lo, hi] and on 1/mass, 1/jzz ----
+    m_lo, m_hi = float(min(mass_iv)), float(max(mass_iv))
+    j_lo, j_hi = float(min(jzz_iv)), float(max(jzz_iv))
+    m_c, j_c = C.MASS, C.JZZ
+    # worst deviation of 1/m from its design value over the interval
+    im_dev = max(abs(1.0 / m_lo - 1.0 / m_c), abs(1.0 / m_hi - 1.0 / m_c))
+    ij_dev = max(abs(1.0 / j_lo - 1.0 / j_c), abs(1.0 / j_hi - 1.0 / j_c))
+    dpx = max(abs(lo - px), abs(hi - px))   # worst |psi_plus - psi_plus_b|
+    # |a R(x) - a_b R(x_b)| <= |a - a_b| |R(x)| + |a_b'| |R(x) - R(x_b)|, with
+    # |R| entries <= 1 and 1/m <= 1/m_lo
+    fac = im_dev + dpx / m_lo
     E_B = np.zeros((NX, NU))
-    E_B[0, 0] = E_B[1, 1] = 0.5 * dt * dt * inv_m_spread + w * dt * dt
-    E_B[2, 0] = E_B[3, 1] = dt * inv_m_spread + w * dt
-    E_B[5, 2] = dt * inv_j_spread
+    E_B[0:2, 0:2] = 0.5 * dt * dt * fac * ones2
+    E_B[2:4, 0:2] = dt * fac * ones2
+    E_B[5, 2] = dt * ij_dev
     return E_A, E_B
 
 
@@ -621,14 +661,16 @@ def allocation_allowance(P, K, B_list, achievable, n_samples=400, R_probe=1.0,
                  else CommandChain(fault=DeterministicFault(active=False)))
         # admitted allocator memory state
         chain.use_hist = rng.uniform(0, 12, 8)
-        u_applied, info = chain(u_fb, psi)
-        d_uq = u_applied - u_fb
+        u_nom_tx, info = chain(u_fb, psi)
+        # allocator error is a KNOWN quantity: nominal transmitted minus request.
+        # Hidden actuation effects belong in the plant mismatch, not in eta_q.
+        d_uq = u_nom_tx - u_fb
         for B in B_list:
             val = float(np.linalg.norm(Cm @ B @ d_uq, 2))
             if val > worst:
                 worst = val
                 worst_detail = {"e_P": R_probe, "u_fb": u_fb.tolist(),
-                                "u_applied": u_applied.tolist(),
+                                "u_nom_tx": u_nom_tx.tolist(),
                                 "d_uq_norm": float(np.linalg.norm(d_uq))}
     return worst, worst_detail
 

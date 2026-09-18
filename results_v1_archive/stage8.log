@@ -1,0 +1,75 @@
+==============================================================================
+STAGE 8  horizon axis and model-level metrics
+==============================================================================
+
+reusing the FROZEN Stage 6 supervision design: eta=0.0000  R=140.049  tol=0.984 m
+
+==============================================================================
+HORIZON AXIS  (closed loop; N does not enter the certificate algebraically)
+==============================================================================
+     horizon: 240/240 done in 159s (8 workers)
+     horizon: 240/240 done in 159s (8 workers)
+cond         N        RMSE (m)  peak (m)   accept   reject  slack<0  ms/step
+----------------------------------------------------------------------------
+healthy     12   0.857+-0.078      2.000   0.2929   0.6997   0.7049     7.49
+healthy     20   0.782+-0.061      2.000   0.2577   0.7040   0.7320     7.60
+healthy     30   0.769+-0.046      2.000   0.2393   0.7080   0.7473     7.96
+healthy     40   0.769+-0.048      2.000   0.2223   0.7145   0.7627     9.33
+healthy     50   0.739+-0.033      2.000   0.2175   0.7199   0.7679    10.66
+
+combined    12   1.013+-0.131      2.000   0.2807   0.7136   0.7177     6.96
+combined    20   0.944+-0.106      2.000   0.2653   0.7011   0.7253     6.91
+combined    30   0.943+-0.116      2.000   0.2621   0.6876   0.7244     8.02
+combined    40   0.943+-0.118      2.000   0.2370   0.6994   0.7470     9.55
+combined    50   0.932+-0.136      2.000   0.2403   0.6860   0.7401    10.95
+
+
+==============================================================================
+OUT-OF-DISTRIBUTION STRESS  (labelled separately, never pooled)
+==============================================================================
+     ood: 1280/1280 done in 514s (12 workers)
+     ood: 1280/1280 done in 514s (12 workers)
+stress      cond       method                   RMSE (m)  peak (m)      succ
+----------------------------------------------------------------------------
+mismatch    actuator   zero_context        1.029+-0.108      2.000   40/40  
+mismatch    actuator   constant_context    0.857+-0.087      2.000   40/40  
+mismatch    actuator   no_impact           0.772+-0.047      2.000  120/120 
+mismatch    actuator   full                0.834+-0.096      2.000  120/120 
+                       full - no_impact  +0.0615 [+0.0474, +0.0774]  *
+
+mismatch    combined   zero_context        1.390+-0.307      2.061   40/40  
+mismatch    combined   constant_context    1.082+-0.191      2.000   40/40  
+mismatch    combined   no_impact           0.991+-0.154      2.000  120/120 
+mismatch    combined   full                1.030+-0.181      2.000  120/120 
+                       full - no_impact  +0.0389 [+0.0124, +0.0655]  *
+
+smooth_ref  actuator   zero_context        0.224+-0.067      0.385   40/40  
+smooth_ref  actuator   constant_context    0.226+-0.057      0.385   40/40  
+smooth_ref  actuator   no_impact           0.223+-0.055      0.382  120/120 
+smooth_ref  actuator   full                0.222+-0.054      0.381  120/120 
+                       full - no_impact  -0.0007 [-0.0023, +0.0009]
+
+smooth_ref  combined   zero_context        0.817+-0.321      1.683   40/40  
+smooth_ref  combined   constant_context    0.680+-0.315      1.240   40/40  
+smooth_ref  combined   no_impact           0.628+-0.214      1.223  120/120 
+smooth_ref  combined   full                0.620+-0.250      1.219  120/120 
+                       full - no_impact  -0.0080 [-0.0299, +0.0174]
+
+
+==============================================================================
+MODEL-LEVEL METRICS  (common held-out sequences, fixed scaling)
+==============================================================================
+  common held-out windows: 37696
+model                pred err (scaled)   retrieval err    chance   ratio
+------------------------------------------------------------------------
+full_s0                       0.001708          1.0751    1.3089   0.821
+full_s1                       0.001726          1.0631    1.3089   0.812
+full_s2                       0.001738          1.0689    1.3089   0.817
+no_impact_s0                  0.001345          1.0318    1.3089   0.788
+no_impact_s1                  0.001368          1.0322    1.3089   0.789
+no_impact_s2                  0.001345          1.0547    1.3089   0.806
+const_s0                      0.001931          1.1873    1.3089   0.907
+const_s1                      0.001931          1.1873    1.3089   0.907
+const_s2                      0.001930          1.1873    1.3089   0.907
+
+wrote results/stage8_horizon.json (12.2 min)

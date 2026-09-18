@@ -24,15 +24,23 @@ from .reference import make_reference
 
 @dataclass
 class EpisodeLog:
-    """Per-step records. Controller-visible and hidden fields are kept apart."""
+    """Per-step records, with the information boundary visible in the field names.
+
+    CONTROLLER-VISIBLE: x_hat, ref, u_prop, u_cmd, u_nom_tx, pulse_command_s,
+    F_alloc, use_hist, innov, pose_valid, z_ctx, gate, accepted, slack_*.
+    EVALUATOR-ONLY (never an input to a policy, a check or a feature builder):
+    x_true, pulse_actual_s, fault_skip, accel, ref_score.
+    """
     x_true: list = field(default_factory=list)
     x_hat: list = field(default_factory=list)
     ref: list = field(default_factory=list)
+    ref_next: list = field(default_factory=list)
     ref_score: list = field(default_factory=list)
     u_prop: list = field(default_factory=list)
     u_cmd: list = field(default_factory=list)
-    u_applied: list = field(default_factory=list)
-    dt_on: list = field(default_factory=list)
+    u_nom_tx: list = field(default_factory=list)
+    pulse_command_s: list = field(default_factory=list)
+    pulse_actual_s: list = field(default_factory=list)
     F_alloc: list = field(default_factory=list)
     use_hist: list = field(default_factory=list)
     accel: list = field(default_factory=list)
@@ -46,6 +54,8 @@ class EpisodeLog:
     gate: list = field(default_factory=list)
     accepted: list = field(default_factory=list)
     slack_cmd: list = field(default_factory=list)
+    slack_fb: list = field(default_factory=list)
+    action_src: list = field(default_factory=list)
     e_P: list = field(default_factory=list)
     meta: dict = field(default_factory=dict)
 
@@ -148,8 +158,11 @@ def run_episode(
         u_star, info = ctrl.solve(x_hat, ref_prev, u_prev, dres)
 
         # ---- command chain -> plant ----
-        u_applied, cinfo = chain(u_star, x_hat[4])
-        x_next = P.plant_step(x, cinfo["dt_on"], x_hat[4], valve=C.VALVE_THRUST,
+        # the allocator legitimately uses the ESTIMATE to turn a world-frame wrench
+        # request into body commands; the plant below uses TRUE yaw to turn the
+        # resulting body force into world acceleration
+        u_nom_tx, cinfo = chain(u_star, x_hat[4])
+        x_next = P.plant_step(x, cinfo["pulse_actual_s"], valve=C.VALVE_THRUST,
                               eta_smooth=eta_smooth, mass=mass, jzz=jzz,
                               drag=drag, yaw_damp=yaw_damp)
         a_mag = np.hypot(x_next[2] - x[2], x_next[3] - x[3]) / C.TS
@@ -161,8 +174,9 @@ def run_episode(
             log.ref_score.append(ref_gen.scoring_reference(k).copy())
             log.u_prop.append(np.asarray(u_star, dtype=float).copy())
             log.u_cmd.append(cinfo["u_commanded"].copy())
-            log.u_applied.append(u_applied.copy())
-            log.dt_on.append(cinfo["dt_on"].copy())
+            log.u_nom_tx.append(u_nom_tx.copy())
+            log.pulse_command_s.append(cinfo["pulse_command_s"].copy())
+            log.pulse_actual_s.append(cinfo["pulse_actual_s"].copy())
             log.F_alloc.append(cinfo["F_alloc"].copy())
             log.use_hist.append(chain.use_hist.copy())
             log.accel.append(a_mag)
@@ -214,8 +228,10 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
     log.meta = dict(seed=seed, steps=steps, policy=policy.name,
                     scenario=sc.to_dict(), manifest_hash=C.manifest_hash())
 
-    # rolling buffers so the encoder history is built from CONTROLLER-VISIBLE data
-    hist = {"x_hat": np.zeros((steps, 6)), "u_applied": np.zeros((steps, 3)),
+    # rolling buffers so the encoder history is built from CONTROLLER-VISIBLE data.
+    # u_nom_tx is the nominal-equivalent transmitted wrench: it carries no hidden
+    # fault information, which is the whole point of the separation in plant.py.
+    hist = {"x_hat": np.zeros((steps, 6)), "u_nom_tx": np.zeros((steps, 3)),
             "pose_valid": np.zeros(steps, dtype=bool),
             "innov": np.zeros((steps, 2))}
 
@@ -231,13 +247,20 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
         hist["pose_valid"][k] = bool(obs.get("valid", True))
         hist["innov"][k] = est.innov
 
+        # Sec 4.5: the successor reference is COMMITTED here, before the command,
+        # and it is the one used to form e_{k+1} and the transition mismatch. A
+        # later position-triggered decision may schedule a new reference but must
+        # not retroactively replace this committed sample.
         ref_gen.update(x_hat, k)
         ref_prev = ref_gen.preview(policy.mpc.N)
+        r_committed_next = ref_prev[1].copy()
 
         out = policy.act(k, x_hat, ref_prev, chain, hist)
-        hist["u_applied"][k] = out["u_applied"]
+        hist["u_nom_tx"][k] = out["u_nominal_transmitted"]
 
-        x_next = P.plant_step(x, out["dt_on"], x_hat[4], eta_smooth=eta_s,
+        pulse_actual, skipped = chain.apply_hidden(out)
+        out["pulse_actual_s"], out["fault_skip"] = pulse_actual, skipped
+        x_next = P.plant_step(x, pulse_actual, eta_smooth=eta_s,
                               mass=sc.mass, jzz=sc.jzz, drag=sc.drag,
                               yaw_damp=sc.yaw_damp)
         a_mag = np.hypot(x_next[2] - x[2], x_next[3] - x[3]) / C.TS
@@ -247,10 +270,12 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
             log.x_hat.append(x_hat.copy())
             log.ref.append(ref_prev[1].copy())
             log.ref_score.append(ref_gen.scoring_reference(k).copy())
+            log.ref_next.append(r_committed_next)
             log.u_prop.append(np.asarray(out["u_prop"], dtype=float).copy())
             log.u_cmd.append(out["u_commanded"].copy())
-            log.u_applied.append(out["u_applied"].copy())
-            log.dt_on.append(out["dt_on"].copy())
+            log.u_nom_tx.append(out["u_nominal_transmitted"].copy())
+            log.pulse_command_s.append(out["pulse_command_s"].copy())
+            log.pulse_actual_s.append(pulse_actual.copy())
             log.F_alloc.append(out["F_alloc"].copy())
             log.use_hist.append(chain.use_hist.copy())
             log.accel.append(a_mag)
@@ -264,6 +289,9 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
             log.gate.append(int(out.get("gate", 1)))
             log.accepted.append(bool(out.get("accepted", True)))
             log.slack_cmd.append(float(out.get("slack_cmd", np.nan)))
+            log.slack_fb.append(float(out.get("slack_fb", np.nan)))
+            # which controller actually produced the transmitted action
+            log.action_src.append(str(out.get("action_src", "candidate")))
             log.e_P.append(float(out.get("e_P", np.nan)))
 
         x = x_next

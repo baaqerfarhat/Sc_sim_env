@@ -1,0 +1,53 @@
+{
+ "checks": {
+  "2.4a hidden severity/phase does not change controller-visible trial": {
+   "pass": true,
+   "detail": "max |difference| over 5 hidden settings = 0.000e+00 (wrench, commanded wrench, allocated force, commanded pulses)"
+  },
+  "2.4b physical successor still changes with the hidden fault": {
+   "pass": true,
+   "detail": "identical commanded pulses (max diff 0.0e+00) but physical state differs by 3.8400e-03; skip flags False/True"
+  },
+  "2.4c repeated trials mutate neither allocator memory nor fault phase": {
+   "pass": true,
+   "detail": "5 trials: max drift 0.0e+00, memory unchanged True, fault counter 0->0"
+  },
+  "2.4d one commit = one memory update and one fault slot": {
+   "pass": true,
+   "detail": "fault cycle 0->1; committed packet is the selected one: True"
+  },
+  "2.4e u_k reconstructs from commanded pulses and nominal parameters": {
+   "pass": true,
+   "detail": "max |reconstruction - logged| = 0.00e+00"
+  },
+  "3.4a body force rotates with TRUE yaw": {
+   "pass": true,
+   "detail": "yaw 0 -> dv=(+0.00192,+0.00000), yaw 90deg -> dv=(+0.00000,+0.00192)"
+  },
+  "3.4b physical integration takes no estimator yaw argument": {
+   "pass": true,
+   "detail": "plant_step parameters: ['x', 'dt_on', 'substeps', 'valve', 'eta_smooth', 'mass', 'jzz', 'drag', 'yaw_damp']"
+  },
+  "3.4c integration converges under refinement": {
+   "pass": true,
+   "detail": "max |x(n) - x(4000)|: n=20: 1.20e-07, n=40: 3.00e-08, n=80: 7.62e-09, n=160: 3.68e-09, n=320: 1.77e-09 (declared tol 5e-04 at the production n=20; 20->80 improves 15.7x)"
+  },
+  "3.4d physical impulse scales with ACTUAL valve thrust": {
+   "pass": true,
+   "detail": "dv(1.2 N) = 0.002400, dv(2.4 N) = 0.004800, ratio 2.000000 (expected 2)"
+  },
+  "3.4e planar rotation equivariance of the physical plant": {
+   "pass": true,
+   "detail": "max deviation 7.11e-15 over position, velocity, yaw, rate"
+  },
+  "3.4f allocator-only vs physical authority are distinguishable": {
+   "pass": true,
+   "detail": "same commanded pulses: dv = 0.00192 at nominal valve thrust vs 0.00640 at 4.0 N. A sweep changing only the allocator's fmax leaves the first number unchanged and must be labelled as such."
+  }
+ },
+ "n_pass": 11,
+ "n_checks": 11,
+ "failures": [],
+ "manifest_hash": "155bb5109e93c543",
+ "wall_time_s": 0.10725164413452148
+}

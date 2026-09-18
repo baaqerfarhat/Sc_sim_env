@@ -350,8 +350,8 @@ x = np.zeros(6)
 accels = []
 for k in range(200):
     u_star = np.array([5.0, 0.0, 0.0])  # saturating request
-    u_applied, info = chain(u_star, x[4])
-    xn = P.plant_step(x, info["dt_on"], x[4])
+    u_nom_tx, info = chain(u_star, x[4])
+    xn = P.plant_step(x, info["pulse_actual_s"])
     a = np.hypot(xn[2] - x[2], xn[3] - x[3]) / C.TS
     accels.append(a)
     x = xn
@@ -372,7 +372,7 @@ for active in (False, True):
     vy = []
     for k in range(200):
         ua, info = ch(np.array([0.0, 5.0, 0.0]), x[4])
-        x = P.plant_step(x, info["dt_on"], x[4])
+        x = P.plant_step(x, info["pulse_actual_s"])
         vy.append(x[3])
     if not active:
         vy_healthy = x[3]

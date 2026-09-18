@@ -31,6 +31,7 @@ import time
 import numpy as np
 
 from scsim import config as C
+from scsim import reference as R
 from scsim import scenarios as S
 from scsim.parallel import pmap
 
@@ -110,11 +111,14 @@ def _ood_job(args):
     method, model_seed, cond, ep_seed, cert, tol, stress_kind = args
     rng = S.scenario_rng(cond, ep_seed, stress_kind)
     if stress_kind == "mismatch":
-        # +/-15% plant mismatch instead of the +/-10% the training population used
+        # +/-15% plant mismatch against the +/-10% of the training population: a
+        # factor of 1.5, NOT double, which an earlier writeup claimed
         sc = S.make_condition(cond, rng, stress=True)
-    elif stress_kind == "smooth_ref":
-        # a reference family never seen in training
-        sc = S.make_condition(cond, rng, reference="smooth")
+    elif stress_kind == "transfer_ref":
+        # A genuinely held-out reference family. `smooth` can no longer serve here:
+        # it is now part of the training mixture, and a family used in training
+        # cannot also be presented as unseen.
+        sc = S.make_condition(cond, rng, reference=R.TRANSFER_FAMILY)
     else:
         raise ValueError(stress_kind)
     from scsim.runner import run_policy_episode
@@ -135,7 +139,7 @@ def ood_sweep(cert, tol, workers=12, n_ep=40):
     families are used, both outside what training saw:
 
       mismatch    +/-15% mass and inertia, vs the +/-10% of the training draws
-      smooth_ref  the dynamically feasible reference family, never used in training
+      transfer_ref  the held-out `transfer` reference family, excluded from training
 
     Cells are labelled stress, as the protocol requires; they are not pooled with the
     calibrated population.
@@ -145,7 +149,7 @@ def ood_sweep(cert, tol, workers=12, n_ep=40):
     print("=" * 78)
     methods = ("zero_context", "constant_context", "no_impact", "full")
     jobs = []
-    for kind in ("mismatch", "smooth_ref"):
+    for kind in ("mismatch", "transfer_ref"):
         for cond in ("actuator", "combined"):
             for i in range(n_ep):
                 for meth in methods:
@@ -159,7 +163,7 @@ def ood_sweep(cert, tol, workers=12, n_ep=40):
            f"{'peak (m)':>9s} {'succ':>9s}")
     print(hdr)
     print("-" * len(hdr))
-    for kind in ("mismatch", "smooth_ref"):
+    for kind in ("mismatch", "transfer_ref"):
         for cond in ("actuator", "combined"):
             for meth in methods:
                 sub = [r for r in rows if r["stress"] == kind
@@ -248,29 +252,74 @@ def model_level_metrics():
             zz = z.numpy()
             ret, chance = np.nan, np.nan
             if anchors is None:
-                anchors = [(w, ei, q) for (ei, k, q) in te["sig_keys"]
-                           for w in [s5._sig_window(te, (ei, k, q))]
+                anchors = [(w, key[0], key[2], key[3], key[4])
+                           for key in te["sig_keys"]
+                           for w in [s5._sig_window(te, key)]
                            if w is not None]
+            # Sec 5.4: a constant-context checkpoint has IDENTICAL latents for every
+            # window, so "nearest neighbour" is decided by floating-point tie-breaking
+            # and carries no behavioural information. Reporting the resulting number
+            # invites the reader to compare it with the others as though it meant
+            # something. It is n/a, and the reason is recorded.
+            is_const = bool(ck.get("constant_context", False))
+            z_spread = float(np.std(zz, axis=0).max())
+            if is_const or z_spread < 1e-9:
+                out[f"{tag}_s{seed}"] = {
+                    "pred_err": perr, "retrieval_err": None, "chance": None,
+                    "ratio": None, "cross_ref_ratio": None,
+                    "note": "retrieval n/a: latents are constant across windows "
+                            f"(max per-dim spread {z_spread:.2e}), so any ranking is "
+                            "arbitrary tie-breaking, not behavioural information"}
+                print(f"{tag + '_s' + str(seed):18s} {perr:19.6f} "
+                      f"{'n/a':>15s} {'n/a':>9s} {'n/a':>7s}")
+                continue
+            cross_ratio = np.nan
             if len(anchors) > 10:
                 sel = np.arange(min(len(anchors), 1500))
                 Z = zz[[anchors[i][0] for i in sel]]
                 E = np.array([anchors[i][1] for i in sel])
                 Q = [anchors[i][2] for i in sel]
+                G = np.array([anchors[i][3] for i in sel])     # probe group
+                FAM = np.array([anchors[i][4] for i in sel])   # reference family
                 d2 = ((Z[:, None, :] - Z[None, :, :]) ** 2).sum(-1)
-                same = E[:, None] == E[None, :]
-                d2 = np.where(same, np.inf, d2)
+                # Sec 5.4: candidates must come from a DIFFERENT parent episode AND
+                # the SAME matched probe group. Without the group restriction a
+                # neighbour can be "retrieved" simply for starting at the same state.
+                elig = (E[:, None] != E[None, :]) & (G[:, None] == G[None, :])
+                d2 = np.where(elig, d2, np.inf)
                 nn = d2.argmin(1)
                 ok = np.isfinite(d2[np.arange(len(sel)), nn])
                 ret = float(np.mean([signature_distance(Q[i], Q[nn[i]], q_mu, q_sd)
                                      for i in np.where(ok)[0]]))
+                # random-neighbour baseline drawn from the SAME eligible pool
                 rng = np.random.default_rng(0)
-                rnd = rng.permutation(len(sel))
-                chance = float(np.mean([
-                    signature_distance(Q[i], Q[rnd[i]], q_mu, q_sd)
-                    for i in range(len(sel)) if E[i] != E[rnd[i]]]))
-            out[f"{tag}_s{seed}"] = {"pred_err": perr, "retrieval_err": ret,
-                                     "chance": chance,
-                                     "ratio": (ret / chance) if chance else None}
+                ch_vals = []
+                for i in np.where(ok)[0]:
+                    pool = np.flatnonzero(elig[i])
+                    if len(pool):
+                        j = int(pool[rng.integers(0, len(pool))])
+                        ch_vals.append(signature_distance(Q[i], Q[j], q_mu, q_sd))
+                chance = float(np.mean(ch_vals)) if ch_vals else np.nan
+                # cross-reference retrieval, reported separately where claimed
+                cr, cc = [], []
+                for i in np.where(ok)[0]:
+                    pool = np.flatnonzero(elig[i] & (FAM != FAM[i]))
+                    if not len(pool):
+                        continue
+                    j = int(pool[np.argmin(d2[i, pool])])
+                    cr.append(signature_distance(Q[i], Q[j], q_mu, q_sd))
+                    jr = int(pool[rng.integers(0, len(pool))])
+                    cc.append(signature_distance(Q[i], Q[jr], q_mu, q_sd))
+                if cr and np.mean(cc) > 0:
+                    cross_ratio = float(np.mean(cr) / np.mean(cc))
+            out[f"{tag}_s{seed}"] = {
+                "pred_err": perr, "retrieval_err": ret, "chance": chance,
+                "ratio": (ret / chance) if chance else None,
+                "cross_ref_ratio": (None if not np.isfinite(cross_ratio)
+                                    else cross_ratio),
+                "n_neighbors": 1,
+                "candidate_pool": "different parent episode, same matched probe group",
+                "pred_err_units": "weighted MSE, mixed state units, NOT RMSE"}
             print(f"{tag + '_s' + str(seed):18s} {perr:19.6f} {ret:15.4f} "
                   f"{chance:9.4f} {ret / chance if chance else float('nan'):7.3f}")
     return out

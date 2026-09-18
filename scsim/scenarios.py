@@ -139,11 +139,17 @@ def build_history(log_arrays, k, L=C.HISTORY_L):
     onset times and probe outcomes are excluded by construction - none of them are
     arguments to this function.
 
+    `u_nom_tx` is the NOMINAL-EQUIVALENT transmitted wrench, a function of the
+    commanded pulses alone. Using the post-fault wrench here, as an earlier version
+    did, handed the encoder a direct measurement of the hidden actuation fault and
+    made the no-fault-label premise false: the fault then had to be *inferred* from
+    nothing, because it was already being observed.
+
     Returns (L+1, N_FEAT_PER_STEP) with invalid entries zeroed and their
     availability flag left visible, plus a mask.
     """
     xh = log_arrays["x_hat"]
-    u = log_arrays["u_applied"]
+    u = log_arrays["u_nom_tx"]
     valid = log_arrays["pose_valid"]
     innov = log_arrays["innov"]
 

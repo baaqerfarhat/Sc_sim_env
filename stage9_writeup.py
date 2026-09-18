@@ -48,6 +48,78 @@ def lpf_lag_share(s3):
     return lag, full, 100.0 * lag / full
 
 
+def sec_corrections(L, s0):
+    """What was wrong before, what changed, and why the old numbers are void."""
+    L += ["## 0. Corrections that invalidated the previous campaign", "",
+          "Four defects were found in the earlier implementation by external review "
+          "and confirmed", "directly in that code. Each one broke an assumption the "
+          "paper's argument rests on, so the", "earlier results are void rather than "
+          "merely imprecise, and no amount of extra episodes", "would have revealed "
+          "any of them.", "",
+          "| # | Defect | Why it invalidated the result |",
+          "|---|---|---|",
+          "| 1 | The controller-visible wrench was computed from **post-fault** pulse "
+          "durations, and that quantity fed the context encoder, the predictor's "
+          "training input and the acceptance check | The learned context was "
+          "**observing the actuation fault directly** through the command channel. "
+          "The paper's central premise is that no fault label, severity or onset is "
+          "ever an input; in substance it was. Identical proposals with identical "
+          "commanded pulses produced different controller-visible wrenches purely "
+          "because the hidden skip phase differed |",
+          "| 2 | The plant rotated body thruster force into the world frame using the "
+          "**estimated** yaw | Physical acceleration depended on the estimator's "
+          "error. Thrusters are bolted to the vehicle, so where the force points "
+          "cannot depend on what the filter believes. This inflated the perception "
+          "conditions with a nonphysical coupling |",
+          "| 3 | A fallback that **failed its own acceptance check** was transmitted "
+          "anyway (the verdict was computed, stored, and never read) | The 'verified "
+          "fallback' of Algorithm 1 was not verified. The eligibility flag was also "
+          "radius-only, so the full pre-action conditions were never enforced |",
+          "| 4 | The interval Jacobian enclosure left yaw-dependent off-diagonal "
+          "entries of `E_B` at exactly zero | The enclosure was **unsound**: sampling "
+          "broke it by 2e-5 on `E_B` and 4e-3 on `E_A`. Bounds a counterexample can "
+          "break certify nothing, so every certificate number computed from them was "
+          "meaningless |", ""]
+    L += ["Also corrected: the behavioural-supervision experiment shared one RNG "
+          "stream between", "minibatch ordering, multistep sampling and behavioural "
+          "pair sampling, so enabling the extra", "loss silently changed every "
+          "subsequent minibatch - `full` and `no_impact` were never the",
+          "matched pair they were reported to be. Probe branches were reset to each "
+          "parent's own state", "and then paired as though matched, so signature "
+          "distances mixed the impairment with the", "initial condition. The probe "
+          "signature regressed physical response against the "
+          "*fault-reduced*", "wrench, which divides out the very impairment the "
+          "signature exists to describe.", ""]
+    if s0:
+        L += [f"**Semantic gate (Stage 0).** {s0['n_pass']}/{s0['n_checks']} checks "
+              f"pass. These are now a hard gate", "ahead of every other stage, "
+              "asserting that hidden fault information cannot reach the",
+              "controller, that physical thrust follows true attitude, that the "
+              "selection logic transmits", "what it claims to, and that the "
+              "enclosures survive sampling. Selected checks:", "",
+              "| Check | Result |", "|---|---|"]
+        for k, v in list(s0["checks"].items()):
+            L.append(f"| {k} | {'PASS' if v['pass'] else 'FAIL'}. {v['detail']} |")
+        L += ["",
+              "Passing 6.1 does **not** certify the continuum; it only records that no "
+              "counterexample was", "found. A rigorous claim needs verified interval "
+              "or exact arithmetic, which this does not", "implement.", ""]
+    L += ["Two approximations are declared rather than fixed, and their consequences "
+          "are carried", "through the results:", "",
+          "- **The first-action norm condition is not enforced inside the "
+          "optimisation.** The solver is a QP and does not acquire a conic constraint "
+          "by having its weights changed. The condition is instead *verified "
+          "independently* on the returned proposal, and a proposal that fails it is "
+          "not treated as a feasible candidate. This is permitted by the review's "
+          "Sec 4.2 provided it is identified, which it is here and in the logs.",
+          "- **The floating-point allowance is a first-order rounding estimate**, "
+          "scaled by the conditioning of the Cholesky factor and the operation count, "
+          "not verified arithmetic. The previous blanket factor of 1+1e-9 was not a "
+          "justified bound on a chain containing a factorisation, an explicit inverse, "
+          "products and norms.", "", "---", ""]
+    return L
+
+
 def sec_environment(L, s1, s3, s5):
     """What the simulator actually is, at the level of detail a reviewer needs.
 
@@ -89,7 +161,8 @@ def sec_environment(L, s1, s3, s5):
           f"squares, and Stage 1 verifies the KKT conditions rather than trusting the "
           f"solver.",
           f"4. **Duty law and pulse realisation.** duty = "
-          f"{C.FIT_SLOPE:.3f}*F {C.FIT_OFFSET:+.5f} s (F in N), clipped to the "
+          f"{C.FIT_SLOPE:.3f}*F/{C.F_CL:.0f} {C.FIT_OFFSET:+.5f} s (F in N, "
+          f"normalised by the {C.F_CL:.0f} N closed-loop force scale), clipped to the "
           f"{C.PWM_PERIOD * 1e3:.0f} ms PWM period inside a {C.TS * 1e3:.0f} ms slot, "
           f"so the duty ceiling is {C.PWM_PERIOD / C.TS:.2f}. Anything above "
           f"{C.PULSE_ZERO_THRESHOLD:.3f} N is stretched to at least "
@@ -277,7 +350,17 @@ def sec_behavioural(L, s5, s6, s8):
               "incurred is reported.", "`chance` is the same statistic under a random "
               "pairing. Ratio < 1 means the latent", "retrieves behaviourally similar "
               "neighbours.", "",
-              "| Model | prediction error | retrieval error | chance | ratio |",
+              "Retrieval candidates are restricted to *different parent episodes* "
+              "within the *same", "matched probe group*, so a neighbour is never "
+              "retrieved by virtue of starting from the", "same physical state. "
+              "`constant_context` is reported as n/a rather than as a number: its "
+              "latents", "are identical by construction, so any ranking among them is "
+              "arbitrary tie-breaking and", "carries no behavioural information.", "",
+              "The prediction column is a **weighted MSE** in mixed state units "
+              "(m, m/s, rad, rad/s),", "not an RMSE; it is not square-rooted and the "
+              "channel weights are those of the training", "loss, so it is comparable "
+              "across rows but is not a physical distance.", "",
+              "| Model | prediction (weighted MSE) | retrieval error | chance | ratio |",
               "|---|---|---|---|---|"]
         for k, v in s8["model_level"].items():
             L.append(f"| `{k}` | {fmt(v['pred_err'], 6)} | "
@@ -307,12 +390,15 @@ def sec_behavioural(L, s5, s6, s8):
 
     if s8 and s8.get("ood"):
         L += ["### 2.4 Out-of-distribution stress (the axis the loss targets)", "",
-              "In-distribution the behavioural term costs a little tracking accuracy. "
-              "The claim it", "is meant to support is transfer, so the same frozen "
-              "checkpoints are re-run on two", "shifts never seen in training: plant "
-              "parameters at double the training mismatch,", "and an unseen reference "
-              "family. Nothing is re-tuned and these cells are never", "pooled with "
-              "the calibrated population.", "",
+              "The claim the behavioural term is meant to support is transfer, so the "
+              "same frozen", "checkpoints are re-run on two shifts absent from "
+              "training: plant parameters at "
+              "**1.5x** the training", "mismatch (+/-15% against +/-10%, not double, "
+              "as an earlier version of this report stated), and", "the held-out "
+              "`transfer` reference family. `smooth` cannot serve as the unseen family "
+              "any more,", "because it is now part of the training mixture. Nothing is "
+              "re-tuned and these cells are", "never pooled with the calibrated "
+              "population.", "",
               "| Stress | Condition | Method | RMSE (m) | peak (m) | recovery |",
               "|---|---|---|---|---|---|"]
         for k, v in s8["ood"]["table"].items():
@@ -405,17 +491,37 @@ def sec_methods(L, s6):
               f"band: **{fmt(ap['in_band'])}**. The comparison did not silently "
               f"change the actuator authority.", ""]
 
-    L += ["### 3.1 All paired effects", "",
-          "| Comparison | Condition | dRMSE (m) | 95% CI | significant |",
-          "|---|---|---|---|---|"]
-    for k, st in s6.get("paired_effects", {}).items():
-        pair, cond, key = k.split("|")
-        if key != "rmse_pos":
+    L += ["### 3.1 All paired effects on the primary endpoint", "",
+          "The primary endpoint is **post-onset position RMSE**, declared before the "
+          "test run, with", "M3 - M2 as the primary comparison. A negative dRMSE "
+          "favours the first-named method.", "",
+          "Two interval levels are reported because they answer different questions. "
+          "The **episode**", "interval is conditional on the three trained "
+          "checkpoints. The **crossed** interval resamples", "training seeds *and* "
+          "episodes, so it speaks for a broader training-and-deployment population; "
+          "with", "only three seeds its precision is genuinely poor, and more episodes "
+          "cannot repair that.", "",
+          "| Comparison | Condition | d post-onset RMSE (m) | episode 95% CI | "
+          "crossed 95% CI | draws | rollouts | notes |",
+          "|---|---|---|---|---|---|---|---|"]
+    eff_all = s6.get("paired_effects", {})
+    for k, st in eff_all.items():
+        parts = k.split("|")
+        if len(parts) != 3 or parts[2] != "post_onset_rmse":
             continue
+        pair, cond = parts[0], parts[1]
         sig = not (st["lo"] <= 0 <= st["hi"])
+        cx = eff_all.get(k + "|crossed")
+        cxs = (f"[{cx['lo']:+.4f}, {cx['hi']:+.4f}]" if cx else "n/a (single seed)")
+        note = []
+        if sig:
+            note.append("episode-significant")
+        if st.get("broadcast_side"):
+            note.append(f"`{st['broadcast_side']}` broadcast across seeds")
         L.append(f"| `{pair}` | {cond} | {st['mean']:+.4f} | "
-                 f"[{st['lo']:+.4f}, {st['hi']:+.4f}] | "
-                 f"{'**yes**' if sig else 'no'} |")
+                 f"[{st['lo']:+.4f}, {st['hi']:+.4f}] | {cxs} | "
+                 f"{st.get('n_distinct_scenarios', '?')} | "
+                 f"{st.get('n_rollouts', '?')} | {', '.join(note) or '-'} |")
     L.append("")
 
     L += ["### 3.2 Seed-level RMSE", "",
@@ -608,15 +714,18 @@ def sec_paper_support(L, s6, s7, s8):
         return L
     tab, eff = s6["table"], s6.get("paired_effects", {})
 
-    L += ["### 5.1 It independently replicates the hardware effect, with power the "
-          "hardware cannot have", "",
-          "The strongest use of this study is as an independent replication of the one "
-          "result the", "hardware does establish: conditioning the controller on a "
-          "learned context beats zero-context", "MPC. Hardware has 3 comparisons at "
-          "n = 3-5 runs with no paired intervals. Simulation has", "4 conditions at "
-          f"{C.EPISODES_PER_CONDITION} matched episodes x {C.N_SEEDS} seeds with block "
-          f"bootstrap intervals, on a plant whose", "authority, estimator envelopes "
-          "and duty law were anchored to the measured hardware first.", "",
+    L += ["### 5.1 It reproduces the hardware effect with power the hardware cannot "
+          "have", "",
+          "This is **not an independent replication**. The simulator's authority, "
+          "estimator error", "envelopes and duty law were *fitted* to the same "
+          "hardware records the comparison is being", "checked against, so agreement "
+          "with those envelopes is calibration agreement, not independent", ""
+          "confirmation. What the study does add is statistical power on a controlled "
+          "plant: hardware", "has 3 comparisons at n = 3-5 runs with no paired "
+          "intervals, while simulation has 4 conditions", f"at "
+          f"{C.EPISODES_PER_CONDITION} matched scenario draws x {C.N_SEEDS} training "
+          f"seeds with paired intervals, and can run", "ablations the hardware never "
+          "flew.", "",
           "| Comparison | Hardware zero -> learned | Simulation zero_context -> full |",
           "|---|---|---|"]
     hw = C.HARDWARE_TABLE
@@ -813,10 +922,14 @@ def sec_summary(L, s2, s6, s7, s8):
 
     if s6:
         eff = s6.get("paired_effects", {})
+        key = "post_onset_rmse"      # the declared primary endpoint
 
         def verdict(cmp_name, better_is_negative=True):
+            """Count conditions where the EPISODE-level interval excludes zero, and
+            report the crossed (seed-inclusive) interval alongside, because the two
+            answer different questions."""
             ks = [k for k in eff if k.startswith(cmp_name + "|")
-                  and k.endswith("|rmse_pos")]
+                  and k.endswith("|" + key)]
             n = len(ks)
             good = sum(1 for k in ks
                        if (eff[k]["hi"] < 0 if better_is_negative
@@ -825,57 +938,123 @@ def sec_summary(L, s2, s6, s7, s8):
                       if (eff[k]["lo"] > 0 if better_is_negative
                           else eff[k]["hi"] < 0))
             rng = [eff[k]["mean"] for k in ks]
-            return n, good, bad, (min(rng), max(rng)) if rng else (0, 0)
+            cross = [eff[k + "|crossed"] for k in ks if k + "|crossed" in eff]
+            n_cross_sig = sum(1 for c in cross
+                              if (c["hi"] < 0 if better_is_negative else c["lo"] > 0))
+            return (n, good, bad, (min(rng), max(rng)) if rng else (0, 0),
+                    len(cross), n_cross_sig)
 
-        n, good, bad, (lo, hi) = verdict("full-no_impact")
-        L.append(f"| Behavioural-supervision gain (`L_impact`) | "
-                 f"**not supported** | costs {lo:+.3f} to {hi:+.3f} m, "
-                 f"{bad}/{n} conditions significantly WORSE; no gain in prediction, "
-                 f"retrieval or OOD transfer; Sec 2 |")
-        n, good, bad, (lo, hi) = verdict("full-constant_context")
-        L.append(f"| Inferring a *changing* context helps | **supported, small** | "
-                 f"{lo:+.3f} to {hi:+.3f} m, {good}/{n} significant; Sec 3.1 |")
-        n, good, bad, (lo, hi) = verdict("full-zero_context")
-        L.append(f"| Learned context beats the hardware comparator | "
-                 f"**supported** | {lo:+.3f} to {hi:+.3f} m, {good}/{n} "
-                 f"significant; Sec 3 |")
-        n, good, bad, (lo, hi) = verdict("full-adaptive_mpc")
-        L.append(f"| Learned context beats adaptive MPC | **supported** | "
-                 f"{lo:+.3f} to {hi:+.3f} m, {good}/{n} significant; Sec 3.1 |")
-        n, good, bad, (lo, hi) = verdict("full-full_no_check")
-        L.append(f"| The post-allocation acceptance check is load-bearing | "
+        n, good, bad, (lo, hi), nc, ncs = verdict("full-no_impact")
+        L.append(f"| **PRIMARY:** behavioural supervision helps (M3 vs M2) | "
+                 f"**not supported; adverse** | costs {lo:+.3f} to {hi:+.3f} m "
+                 f"post-onset RMSE, {bad}/{n} conditions significantly WORSE at the "
+                 f"episode level. The seed-crossed intervals include zero in "
+                 f"{nc - ncs}/{nc}, so at the population level the effect is "
+                 f"unresolved - but every point estimate is adverse. The pre-declared "
+                 f"lambda_I grid also selected **zero**; Sec 2 |")
+        n, good, bad, (lo, hi), nc, ncs = verdict("no_impact-constant_context")
+        L.append(f"| Inferring a *changing* context helps (M2 vs M1) | "
+                 f"**supported** | {lo:+.3f} to {hi:+.3f} m, {good}/{n} conditions "
+                 f"significant. This is the clean isolation: both sides carry no "
+                 f"behavioural loss; Sec 3 |")
+        n, good, bad, (lo, hi), nc, ncs = verdict("full-nominal_recovery")
+        L.append(f"| The learned residual helps (M3 vs M0) | "
+                 f"**partially supported** | {lo:+.3f} to {hi:+.3f} m, {good}/{n} "
+                 f"conditions significant, with the same recovery structure on both "
+                 f"sides; Sec 3 |")
+        n, good, bad, (lo, hi), nc, ncs = verdict("full-fallback_only")
+        L.append(f"| MPC planning adds value beyond the fallback (M3 vs M5) | "
+                 f"**not supported** | {lo:+.3f} to {hi:+.3f} m; removing the "
+                 f"optimiser entirely and keeping only the checked fallback changes "
+                 f"little, and is significantly BETTER in {bad}/{n} conditions. Much "
+                 f"of the measured performance is the fallback and the eligibility "
+                 f"logic, not MPC; Sec 3 |")
+        n, good, bad, (lo, hi), nc, ncs = verdict("full-full_no_check")
+        L.append(f"| The post-allocation acceptance check is load-bearing (M3 vs M4) | "
                  f"**supported, large** | {lo:+.3f} to {hi:+.3f} m, {good}/{n} "
-                 f"significant; Sec 3.1, 3.3 |")
+                 f"significant, now compared per-checkpoint rather than broadcast. "
+                 f"Without it the controller diverges; Sec 3 |")
+        n, good, bad, (lo, hi), nc, ncs = verdict("full-zero_context")
+        L.append(f"| Beats the hardware-matched comparator (M3 vs HW) | "
+                 f"**condition-dependent** | {lo:+.3f} to {hi:+.3f} m: better under "
+                 f"perception and combined faults, **worse** under healthy and "
+                 f"actuator-only. The earlier campaign's uniform win did not survive "
+                 f"closing the fault-information leak; Sec 3 |")
 
+        tab, spec = s6["table"], s6.get("task_spec", {})
+        n_ts = sum(v["n_task_success"] for v in tab.values())
+        n_ep = sum(v["n_episodes"] for v in tab.values())
+        best = max(tab.items(), key=lambda kv: kv[1]["task_success_rate"])
+        L.append(f"| Declared task specification is met | **not supported** | "
+                 f"pos <= {spec.get('tol_pos_m', 0.15):.2f} m and yaw <= "
+                 f"{spec.get('tol_yaw_deg', 5):.0f} deg held "
+                 f"{spec.get('dwell_s', 2):.0f} s is reached in only "
+                 f"{n_ts}/{n_ep} rollouts overall; the best cell is "
+                 f"`{best[0]}` at {best[1]['task_success_rate']:.0%}. The spec is "
+                 f"**not attainable** under the modelled estimator and authority; "
+                 f"Sec 3 |")
+
+    if s8 and s8.get("ood"):
+        ot = s8["ood"]["table"]
+        tr = {k: v for k, v in ot.items() if k.startswith("transfer_ref|")}
+        if tr:
+            zc = [v["rmse_pos"]["mean"] for k, v in tr.items()
+                  if k.endswith("|zero_context")]
+            lr = [v["rmse_pos"]["mean"] for k, v in tr.items()
+                  if k.endswith("|full") or k.endswith("|no_impact")]
+            oe = s8["ood"].get("paired_full_minus_no_impact", {})
+            sig_better = sum(1 for k, v in oe.items()
+                             if k.startswith("transfer_ref|") and v["hi"] < 0)
+            n_tr = sum(1 for k in oe if k.startswith("transfer_ref|"))
+            if zc and lr:
+                L.append(
+                    f"| Learned residual transfers to an unseen reference family | "
+                    f"**not supported; fails badly** | on the held-out `transfer` "
+                    f"family the learned methods reach {min(lr):.1f}-{max(lr):.1f} m "
+                    f"RMSE against {min(zc):.2f}-{max(zc):.2f} m for the "
+                    f"*zero-context* comparator - roughly an order of magnitude worse. "
+                    f"The residual is trained on `step`/`smooth` and does not "
+                    f"generalise off them; Sec 2.4 |")
+                L.append(
+                    f"| Behavioural supervision helps on cross-reference transfer | "
+                    f"**weak, and immaterial** | this is the one axis where M3 beats "
+                    f"M2: significantly better in {sig_better}/{n_tr} held-out-family "
+                    f"cells. But the gain is ~0.13-0.17 m on top of a ~5 m error, so "
+                    f"it improves a regime in which the method has already failed; "
+                    f"Sec 2.4 |")
+    if s6:
         tab = s6["table"]
-        zc = [tab[f"{c}|zero_context"] for c in s6["conditions"]
-              if tab.get(f"{c}|zero_context", {}).get("n_attempted")]
-        fu = [tab[f"{c}|full"] for c in s6["conditions"]
-              if tab.get(f"{c}|full", {}).get("n_attempted")]
-        if zc and fu:
-            zr = sum(t["n_success"] for t in zc) / sum(t["n_attempted"] for t in zc)
-            fr = sum(t["n_success"] for t in fu) / sum(t["n_attempted"] for t in fu)
-            # both comparators nearly always recover eventually, so the separating
-            # quantity is how long it takes, not whether it happens
-            zt = np.nanmedian([t["recovery_time"]["median"] for t in zc])
-            ft = np.nanmedian([t["recovery_time"]["median"] for t in fu])
-            L.append(f"| Recovery after onset is faster | **supported** | "
-                     f"median t_rec {ft:.1f} s vs {zt:.1f} s for the comparator "
-                     f"(recovery rate {fr:.1%} vs {zr:.1%}, both high, so time is "
-                     f"the separating quantity); Sec 3 |")
+        sup = [v["frac_supervisor"]["mean"] for k, v in tab.items()
+               if k.endswith("|full") and np.isfinite(
+                   v.get("frac_supervisor", {}).get("mean", np.nan))]
+        if sup:
+            L.append(
+                f"| The evaluated policy is mostly the *proposed* controller | "
+                f"**no** | the fixed supervisor issues "
+                f"{min(sup):.0%}-{max(sup):.0%} of all transmitted actions under M3, "
+                f"because pre-action eligibility requires a fallback that passes its "
+                f"own check and it usually does not. What the table scores is largely "
+                f"a fixed velocity-damping law, not context-conditioned MPC; Sec 3 |")
 
     if s7:
         L.append(f"| Numerical recovery certificate | **not supported (empty)** | "
-                 f"0 of {len(s7['sweep'])} swept cells certify; boundary and binding "
-                 f"terms located instead; Sec 4 |")
+                 f"0 of {len(s7['sweep'])} swept cells certify, now with a *sound* "
+                 f"enclosure; boundary and binding terms located instead; Sec 4 |")
     L += ["",
-          "The two items the abstract lists as unvalidated remain unvalidated, and "
-          "this study says", "so explicitly. What it does establish is the "
-          "*architecture* around them: the learned", "context input and the "
-          "post-allocation acceptance check are both real, measurable, "
-          "matched-comparison", "effects, and the certificate analysis converts an "
-          "empty region into two concrete design", "requirements (a feasible reference "
-          "and a Lipschitz-bounded residual).", "", "---", ""]
+          "**Net position.** Two mechanisms survive the corrected campaign: the "
+          "learned residual and", "the changing context both improve tracking against "
+          "matched comparators, and the", "post-allocation check is decisively "
+          "load-bearing. Three claims do not survive: behavioural",
+          "supervision is adverse on the primary endpoint and was rejected by its own "
+          "pre-declared", "selection grid, MPC planning is not distinguishable from "
+          "the checked fallback, and the", "recovery certificate is empty under a "
+          "sound enclosure. The method also no longer beats the",
+          "hardware-matched comparator uniformly - only under perception and combined "
+          "faults.", "",
+          "The single most consequential change is closing the fault-information leak. "
+          "Much of the", "earlier campaign's positive result was the context encoder "
+          "reading the fault out of the", "command channel rather than inferring it "
+          "from behaviour.", "", "---", ""]
     return L
 
 
@@ -885,16 +1064,27 @@ def main():
     s5, s6 = load("stage5_training.json"), load("stage6_methods.json")
     s7, s8 = load("stage7_certificate.json"), load("stage8_horizon.json")
 
+    s0 = load("stage0_semantics.json")
+    ident = load("run_identity.json")
+
     L = ["# Simulation results",
          "",
          "Companion evidence for *Multimodal Context Learning for Actuation and "
          "Perception", "Fault-Tolerant Model Predictive Control*, targeting the two "
          "items the abstract", "lists as unvalidated: the behavioural-supervision "
          "gain and the numerical recovery", "certificate.", ""]
+    if ident:
+        L += [f"**Run id `{ident['run_id']}`.** This is the *corrected* campaign. It "
+              f"supersedes the earlier", "development campaign, preserved unmodified "
+              "in `results_v1_archive/`, whose numbers are **not**",
+              "comparable with these and should not be quoted. See section 0.", ""]
     if s2:
-        L += [f"Configuration manifest hash: `{s2['manifest_hash']}`.", ""]
+        L += [f"Configuration manifest hash: `{s2['manifest_hash']}`"
+              + (f", code commit `{str(ident.get('git_commit'))[:12]}`."
+                 if ident and ident.get("git_commit") else "."), ""]
     L += ["Figures: `results/figures/`.", "", "---", ""]
 
+    L = sec_corrections(L, s0)
     L = sec_summary(L, s2, s6, s7, s8)
 
     L = sec_environment(L, s1, s3, s5)

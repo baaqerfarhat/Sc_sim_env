@@ -110,7 +110,9 @@ def domain_vertices(family, mass_span=0.10, jzz_span=0.10):
         # as well as the now/next rotation mismatch
         lo = min(yaw_range[0], r_now[4], r_next[4])
         hi = max(yaw_range[1], r_now[4], r_next[4])
-        E_A, E_B = CT.interval_jacobian_bounds(lo, hi, m_iv, j_iv)
+        E_A, E_B = CT.interval_jacobian_bounds(lo, hi, m_iv, j_iv,
+                                               psi_now_c=r_now[4],
+                                               psi_next_c=r_next[4])
         boxes.append({"r_now": r_now, "r_next": r_next, "A": A, "B": B,
                       "E_A": E_A, "E_B": E_B, "yaw_range": [lo, hi]})
     return A_list, B_list, boxes
@@ -151,21 +153,54 @@ def load_residual_jacobian():
 
 
 def achievable_set(cfg):
-    """Achievable wrench box for a configuration.
+    """Per-axis command budget for a configuration.
 
-    Two thrusters per force axis and a four-thruster couple, each limited by the
-    realizable average force fmax * duty_ceiling.
+    Sec 3.3: this is a BOX formed from separate axis maxima. It is NOT the jointly
+    achievable wrench set, because simultaneous force and torque requests share
+    thrusters, so a point inside this box need not be realizable. It plays the role
+    of the manuscript's convex command budget U for admissibility testing only;
+    whether the allocator can actually realize a given fallback is a separate
+    question, answered pointwise by the runtime allocation check.
     """
     avg = cfg["fmax"] * cfg["duty"]
     return np.array([2.0 * avg, 2.0 * avg, 4.0 * 0.2 * avg])
 
 
 def _chain_factory(cfg):
+    """Build the command chain for a configuration.
+
+    `valve` is the TRUE delivered thrust per open valve and defaults to the hardware
+    value. A configuration that raises `fmax` without raising `valve` has only
+    widened what the allocator may request: the physical impulse per pulse is
+    unchanged. Such rows are labelled `allocator_only` in the sweep so a permission
+    change is never read as extra physical authority.
+    """
+    valve = cfg.get("valve", C.VALVE_THRUST)
     def make():
         return CommandChain(fault=DeterministicFault(active=False),
                             duty_ceiling=cfg["duty"] * C.TS,
-                            fmax=cfg["fmax"], fit_offset=cfg["offset"])
+                            fmax=cfg["fmax"], fit_offset=cfg["offset"],
+                            valve_nominal=valve)
     return make
+
+
+def authority_kind(cfg):
+    """Which subsystem a sweep row actually changes (Sec 3.3)."""
+    valve = cfg.get("valve", C.VALVE_THRUST)
+    phys = abs(valve - C.VALVE_THRUST) > 1e-12
+    alloc = abs(cfg["fmax"] - C.FMAX_PER_THRUSTER) > 1e-12
+    duty = abs(cfg["duty"] - 0.40) > 1e-12
+    if phys and alloc:
+        return "physical_thruster_upgrade"   # nominal map AND delivered thrust
+    if phys:
+        return "delivered_thrust_only"
+    if alloc and duty:
+        return "allocator_only_and_pwm"
+    if alloc:
+        return "allocator_only"              # permission change, no new physics
+    if duty:
+        return "pwm_period_only"
+    return "hardware_nominal"
 
 
 def evaluate_certificate(P, K, boxes, family, *, achievable, chain_factory,
@@ -308,14 +343,24 @@ def main():
     # ------------------------------------------------------------------
     # 2. authority configurations (Sec 12 axes, hardware value first)
     # ------------------------------------------------------------------
+    # Sec 3.3: every row states which subsystem changes. `fmax=...` rows raise only
+    # the allocator's permitted request; `thruster=...` rows are physical upgrades
+    # that move the nominal mapping AND the delivered valve thrust together. The
+    # earlier sweep contained only the former but described them as authority
+    # changes, so its "authority needed for a nonempty region" conclusion was about
+    # a permission variable rather than about physics.
     configs = [dict(label=f"duty={d:.2f}", duty=d, fmax=C.FMAX_PER_THRUSTER,
                     offset=C.FIT_OFFSET) for d in (0.40, 0.55, 0.70, 0.85, 1.00)]
-    configs += [dict(label=f"fmax={fm:.1f}N", duty=0.40, fmax=fm,
+    configs += [dict(label=f"fmax={fm:.1f}N(alloc only)", duty=0.40, fmax=fm,
                      offset=C.FIT_OFFSET) for fm in (2.0, 3.0, 4.0)]
+    # physical thruster upgrades: valve thrust and nominal limit scale together
+    configs += [dict(label=f"thruster={fm:.1f}N(physical)", duty=0.40, fmax=fm,
+                     offset=C.FIT_OFFSET, valve=fm)
+                for fm in (2.0, 3.0, 4.0)]
     configs.append(dict(label="offset=0", duty=0.40, fmax=C.FMAX_PER_THRUSTER,
-                        offset=0.0))
-    configs.append(dict(label="duty=1.0,fmax=4.0,offset=0", duty=1.00, fmax=4.0,
-                        offset=0.0))
+                        offset=C.FIT_OFFSET * 0.0))
+    configs.append(dict(label="duty=1.0,thruster=4.0N(physical),offset=0",
+                        duty=1.00, fmax=4.0, offset=0.0, valve=4.0))
 
     print("\n--- sweeping family x lambda x effort x tolerance x authority")
     rows = []
@@ -333,7 +378,10 @@ def main():
                     r.update({"lam0": l, "w_effort": w, "param_span": span,
                               "config": cfg["label"], "duty_ceiling": cfg["duty"],
                               "fmax": cfg["fmax"], "duty_offset": cfg["offset"],
+                              "valve_true": cfg.get("valve", C.VALVE_THRUST),
+                              "authority_kind": authority_kind(cfg),
                               "achievable": list(ach),
+                              "achievable_is_box_not_joint_set": True,
                               "is_hardware": (cfg["duty"] == 0.40
                                               and cfg["fmax"] == C.FMAX_PER_THRUSTER
                                               and cfg["offset"] == C.FIT_OFFSET)})

@@ -304,13 +304,20 @@ class CommandChain:
 
     def __init__(self, fault: DeterministicFault | None = None,
                  duty_ceiling=C.PWM_PERIOD, fmax=C.FMAX_PER_THRUSTER,
-                 fit_offset=C.FIT_OFFSET, eta_smooth=None):
+                 fit_offset=C.FIT_OFFSET, eta_smooth=None,
+                 valve_nominal=C.VALVE_THRUST):
         self.use_hist = np.zeros(8)
         self.fault = fault if fault is not None else DeterministicFault(active=False)
         # sweep knobs (Sec 12); hardware values are the defaults
         self.duty_ceiling = float(duty_ceiling)
         self.fmax = float(fmax)
         self.fit_offset = float(fit_offset)
+        # Sec 3.3: the NOMINAL valve thrust assumed by the command mapping. A sweep
+        # representing physically larger thrusters must move this together with the
+        # plant's true valve thrust; a sweep that only raises `fmax` changes what the
+        # allocator is permitted to request and nothing physical, and must be labelled
+        # that way rather than reported as an authority change.
+        self.valve_nominal = float(valve_nominal)
         # smooth-eta is a DISTINCT intervention from the pulse skip, never
         # relabelled as "x% effectiveness" of it
         self.eta_smooth = eta_smooth
@@ -320,13 +327,24 @@ class CommandChain:
         return np.clip(dt_on, 0.0, self.duty_ceiling)
 
     def trial(self, u_star, psi):
-        """Run steps 2-9 WITHOUT mutating allocator memory or the fault counter.
+        """Run steps 2-8 WITHOUT mutating allocator memory or touching the fault.
 
-        Algorithm 1 requires that candidate and fallback are both trial-allocated
-        from the same frozen sigma_q and intended transmission slot, and that only
-        the chosen duty vector is transmitted with its memory update committed.
-        Re-allocating a stored fallback after mutating allocator memory would
-        invalidate its earlier check.
+        Returns the NOMINAL-EQUIVALENT TRANSMITTED wrench, which is what the paper
+        calls u_k: nominal geometry and nominal valve thrust applied to the pulse
+        durations actually selected for transmission. It is a function of the
+        commanded pulses only.
+
+        The hidden pulse-skip and any hidden valve effectiveness are NOT applied
+        here. They belong to the plant, and applying them here would hand the
+        controller a direct measurement of the fault: an earlier version did
+        exactly that, so identical proposals with identical commanded pulses
+        produced different controller-visible wrenches purely because the hidden
+        skip phase differed. The encoder, the predictor and the acceptance check
+        all consumed that quantity, which made "no fault label is an input"
+        false in substance.
+
+        Algorithm 1 also requires candidate and fallback to be trial-allocated
+        from the same frozen sigma_q, so nothing here advances allocator memory.
         """
         info = {}
         u = cap_wrench_heading_first(np.asarray(u_star, dtype=float))  # step 2
@@ -343,23 +361,25 @@ class CommandChain:
         dt_on = self.duty_from_force(F)                                # step 8
         dt_on = apply_min_pulse(dt_on, F)
         dt_on = condense_pairs_by_dt(dt_on, F)
-        info["dt_on_pre_fault"] = dt_on.copy()
+        # the packet that would be transmitted: commanded, pre-fault, by definition
+        info["pulse_command_s"] = dt_on.copy()
 
-        # step 9 is previewed here without advancing the fault counter, so a trial
-        # allocation cannot change the deterministic skip phase
-        dt_on, skipped = self.fault.preview(dt_on)
-        info["dt_on"] = dt_on.copy()
-        info["fault_skip"] = skipped
-
-        valve = np.full(8, C.VALVE_THRUST)
-        if self.eta_smooth is not None:
-            valve = valve * self.eta_smooth
-        f_avg = valve * dt_on / C.TS
-        info["f_avg"] = f_avg.copy()
-        # transmitted-equivalent wrench: what the allocator geometry delivers
-        info["u_applied"] = alloc_matrix(psi) @ f_avg
+        # nominal-equivalent transmitted wrench, from NOMINAL valve thrust
+        f_avg_nominal = self.valve_nominal * dt_on / C.TS
+        info["f_avg_nominal"] = f_avg_nominal.copy()
+        info["u_nominal_transmitted"] = alloc_matrix(psi) @ f_avg_nominal
         info["_F_for_commit"] = F
-        return info["u_applied"].copy(), info
+        return info["u_nominal_transmitted"].copy(), info
+
+    def apply_hidden(self, info):
+        """Evaluator side only: hidden actuation faults acting on a chosen packet.
+
+        Separated from `trial` so that no controller-visible path can reach it.
+        Returns the actual pulse durations; the plant turns those into physical
+        force using the true (hidden) valve thrust and the true yaw.
+        """
+        pulse_actual, skipped = self.fault.preview(info["pulse_command_s"])
+        return pulse_actual, skipped
 
     def commit(self, info):
         """Transmit: advance the fault counter and the allocator EWMA exactly once."""
@@ -368,40 +388,58 @@ class CommandChain:
 
     def __call__(self, u_star, psi):
         """Trial then immediately commit. This is the hardware behaviour: there was
-        no acceptance check, so every allocation was transmitted."""
-        u_applied, info = self.trial(u_star, psi)
+        no acceptance check, so every allocation was transmitted.
+
+        Also resolves the hidden effect for the caller, because a caller using this
+        shorthand has no separate accept/reject step to interleave.
+        """
+        u_nominal, info = self.trial(u_star, psi)
+        pulse_actual, skipped = self.apply_hidden(info)
+        info["pulse_actual_s"] = pulse_actual
+        info["fault_skip"] = skipped
         self.commit(info)
-        return u_applied, info
+        return u_nominal, info
 
 
 # ==========================================================================
 # true plant integration
 # ==========================================================================
-def plant_step(x, dt_on, psi_hold, substeps=C.PLANT_SUBSTEPS, valve=C.VALVE_THRUST,
+def plant_step(x, dt_on, substeps=C.PLANT_SUBSTEPS, valve=C.VALVE_THRUST,
                eta_smooth=None, mass=C.MASS, jzz=C.JZZ, drag=0.0, yaw_damp=0.0):
     """Integrate the continuous plant at Ts/substeps with left-aligned pulses.
 
     Pulse timing is resolved inside the slot rather than averaged, so the 12 ms
-    minimum pulse and the 40 ms ceiling act on the true trajectory. `psi_hold` is
-    the yaw used by the allocator for this slot (allocation is computed once per
-    control cycle, not re-rotated mid-slot).
+    minimum pulse and the 40 ms ceiling act on the true trajectory.
+
+    Body-frame thruster force is rotated into the world frame by the TRUE yaw,
+    updated inside the integration. It is not rotated by the estimator's yaw: the
+    thrusters are bolted to the vehicle, so where the force points is a physical
+    fact that cannot depend on what the filter believes. An earlier version passed
+    the estimate here, which made physical acceleration a function of estimator
+    error and inflated the perception conditions with a nonphysical coupling.
+
+    `valve` and `eta_smooth` are the TRUE (hidden) valve thrust and effectiveness.
     """
     x = np.asarray(x, dtype=float).copy()
     h = C.TS / substeps
     v = np.full(8, valve, dtype=float)
     if eta_smooth is not None:
         v = v * eta_smooth
-    A = alloc_matrix(psi_hold)
+    Gf, Gm = C.G_MAP[0:2, :], C.G_MAP[2, :]
+    dt_on = np.asarray(dt_on, dtype=float)
     for s in range(substeps):
         t0 = s * h
-        t1 = t0 + h
         # fraction of this substep for which each valve is open (left-aligned)
-        frac = np.clip((np.asarray(dt_on) - t0) / h, 0.0, 1.0)
+        frac = np.clip((dt_on - t0) / h, 0.0, 1.0)
         f = v * frac
-        u = A @ f
-        ax = u[0] / mass - drag * x[2]
-        ay = u[1] / mass - drag * x[3]
-        az = u[2] / jzz - yaw_damp * x[5]
+        f_body = Gf @ f                      # body-frame force
+        tau = float(Gm @ f)                  # yaw torque is frame-independent
+        c, sn = np.cos(x[4]), np.sin(x[4])   # TRUE yaw, refreshed each substep
+        fx = c * f_body[0] - sn * f_body[1]
+        fy = sn * f_body[0] + c * f_body[1]
+        ax = fx / mass - drag * x[2]
+        ay = fy / mass - drag * x[3]
+        az = tau / jzz - yaw_damp * x[5]
         x[0] += h * x[2] + 0.5 * h * h * ax
         x[1] += h * x[3] + 0.5 * h * h * ay
         x[2] += h * ax

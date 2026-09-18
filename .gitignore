@@ -16,3 +16,7 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .DS_Store
+
+# v1 development campaign, preserved for provenance but not tracked (regenerable,
+# and mixing it with the corrected campaign is exactly what must not happen)
+data_v1_archive

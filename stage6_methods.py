@@ -40,7 +40,8 @@ from scsim import certificate as CT
 from scsim import config as C
 from scsim import scenarios as S
 from scsim.controllers import (AdaptiveMPCPolicy, ConstantContextPolicy,
-                               LearnedContextPolicy, ZeroContextPolicy)
+                               FallbackOnlyPolicy, LearnedContextPolicy,
+                               NominalRecoveryPolicy, ZeroContextPolicy)
 from scsim.parallel import pmap
 from scsim.runner import run_policy_episode
 
@@ -54,18 +55,51 @@ N_CALIB_PER_COND = 25
 STEPS = C.EPISODE_STEPS
 HOLD_STEPS = 20               # 2 s inside tolerance counts as recovered
 
+# Sec 7.1 method matrix. The ID column is what the paper tables cite; the internal
+# name is what the code and checkpoints use.
+#   M0  nominal_recovery   no learned residual, SAME recovery structure
+#   M1  constant_context   trained constant context, prediction losses only
+#   M2  no_impact          changing context, prediction losses only
+#   M3  full               changing context + behavioural supervision
+#   M4  full_no_check      M3 checkpoint, post-allocation acceptance bypassed
+#   M5  fallback_only      checked fallback feedback only, no MPC planning
+#   M6  adaptive_mpc       adaptation baseline with a documented update law
+#   --  zero_context       hardware-matched comparator, DIAGNOSTIC only
+METHOD_IDS = {"nominal_recovery": "M0", "constant_context": "M1",
+              "no_impact": "M2", "full": "M3", "full_no_check": "M4",
+              "fallback_only": "M5", "adaptive_mpc": "M6",
+              "zero_context": "HW"}
+
 # methods that do not depend on a training seed
 SEEDLESS = ("zero_context", "adaptive_mpc")
-LEARNED = ("constant_context", "no_impact", "full", "full_no_check")
+LEARNED = ("nominal_recovery", "constant_context", "no_impact", "full",
+           "full_no_check", "fallback_only")
 METHODS = SEEDLESS + LEARNED
+
+# Sec 8.1: task success thresholds declared BEFORE the final test, and fixed across
+# every method. These are provisional development values, not measured spacecraft
+# requirements, and they are not guaranteed attainable under the modelled estimator
+# and authority: if they are not met, that is reported as a failure with its cause.
+# The earlier campaign instead derived its tolerance from the healthy zero-context
+# terminal error (0.98 m), which is a baseline-relative threshold that moves whenever
+# the baseline moves.
+TASK_TOL_POS = 0.15          # m
+TASK_TOL_YAW = np.deg2rad(5.0)
+TASK_DWELL_STEPS = 20        # 2.0 s at 10 Hz
+TASK_DEADLINE_STEPS = C.EPISODE_STEPS
 
 # Protocol Sec 5 requires >=3 training seeds for the variants whose TRAINING differs,
 # which is the full / no_impact pair (the intentional lambda_I difference). The other
 # two differ from `full` in deployment, not in training: `full_no_check` reuses the
 # `full` checkpoint with the check bypassed, and `constant_context` is a single extra
 # representation. Those run on seed 0 only, which is where the compute is spent best.
+# Sec 8.3: full_no_check must be run for EVERY seed that `full` uses, because the
+# comparison is per-checkpoint. Broadcasting a single seed-0 no-check run against all
+# three `full` seeds, as the earlier campaign did, is not a same-checkpoint ablation.
 SEEDS_FOR = {"no_impact": MODEL_SEEDS, "full": MODEL_SEEDS,
-             "constant_context": (0,), "full_no_check": (0,)}
+             "full_no_check": MODEL_SEEDS,
+             "constant_context": (0,), "nominal_recovery": (0,),
+             "fallback_only": MODEL_SEEDS}
 
 
 # --------------------------------------------------------------------------
@@ -120,6 +154,14 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
         return ZeroContextPolicy(N=N)
     if method == "adaptive_mpc":
         return AdaptiveMPCPolicy(N=N)
+    if method in ("nominal_recovery", "fallback_only"):
+        cls = (NominalRecoveryPolicy if method == "nominal_recovery"
+               else FallbackOnlyPolicy)
+        # both reuse the `full` architecture/normalisation but differ in what they
+        # consult: M0 zeroes the residual, M5 removes the optimisation
+        return cls(f"{DATA}/model_full_s{model_seed}.pt", check_mode="enforce",
+                   P=cert["P"], K=cert["K"], lam=cert["lam"], eta=cert["eta"],
+                   R=cert["R"], N=N)
     # `constant_context` goes through the SAME policy class and the same recovery
     # machinery as `full`; only the checkpoint differs. A constant-context checkpoint
     # returns its single learned vector from `encode` regardless of the history, so
@@ -173,22 +215,63 @@ def episode_metrics(log, sc, tol):
         "solve_ms_p95": float(np.nanpercentile(a["solve_ms"], 95)),
     }
 
+    # ---- action source: which controller actually produced the transmitted action ----
+    src = list(a["action_src"]) if "action_src" in a else []
+    if src:
+        for label in ("candidate", "fallback_checked", "fallback_solver_fail",
+                      "supervisor", "fallback_only", "unchecked_solver_fallback"):
+            m[f"frac_src_{label}"] = float(sum(1 for s in src if s == label) / len(src))
+
+    # ---- Sec 8.1/8.2 task success against DECLARED thresholds ----
+    # Both position and yaw must hold inside tolerance for the full dwell before the
+    # deadline. This is a fixed specification, identical for every method, and it is
+    # evaluated on every episode including healthy ones.
+    inside_task = (e_pos <= TASK_TOL_POS) & (e_yaw <= TASK_TOL_YAW)
+    m["task_success"], m["completion_time"] = False, np.nan
+    limit = min(n, TASK_DEADLINE_STEPS) - TASK_DWELL_STEPS + 1
+    for t in range(max(limit, 0)):
+        if inside_task[t:t + TASK_DWELL_STEPS].all():
+            m["task_success"] = True
+            m["completion_time"] = float((t + TASK_DWELL_STEPS) * C.TS)
+            break
+    # Sec 8.2: a transient return is not sustained tracking, so record whether the
+    # trajectory was still inside tolerance at the end of the episode
+    m["task_held_at_end"] = bool(inside_task[-TASK_DWELL_STEPS:].all())
+    m["frac_time_in_tol"] = float(inside_task.mean())
+
     # ---- recovery, measured only when there is something to recover from ----
     onset = sc.onset_step if (sc.fault_active or sc.perception != "healthy") else None
     m["attempted"] = bool(onset is not None and onset + HOLD_STEPS < n)
     m["success"], m["recovery_time"] = False, np.nan
     if m["attempted"]:
+        # Sec 8.2: separate MAINTENANCE (already inside tolerance at onset and staying
+        # there) from REACQUISITION (thrown out and having to come back). Pooling them
+        # lets easy episodes inflate a recovery rate.
+        m["was_in_tol_at_onset"] = bool(inside_task[onset])
+        m["mode"] = "maintenance" if inside_task[onset] else "reacquisition"
         inside = e_pos <= tol
         for t in range(onset, n - HOLD_STEPS + 1):
             if inside[t:t + HOLD_STEPS].all():
                 m["success"] = True
                 m["recovery_time"] = float((t - onset) * C.TS)
                 break
+        # post-onset window is FIXED relative to onset and identical across methods
         m["post_onset_rmse"] = float(np.sqrt(np.mean(e_pos[onset:] ** 2)))
         m["post_onset_peak"] = float(e_pos[onset:].max())
+        m["post_onset_rmse_yaw"] = float(np.sqrt(np.mean(e_yaw[onset:] ** 2)))
+        # time from onset to the START of a qualifying dwell under the TASK spec
+        m["time_to_task_tol"] = np.nan
+        for t in range(onset, n - TASK_DWELL_STEPS + 1):
+            if inside_task[t:t + TASK_DWELL_STEPS].all():
+                m["time_to_task_tol"] = float((t - onset) * C.TS)
+                break
     else:
+        m["was_in_tol_at_onset"] = bool(inside_task[0])
+        m["mode"] = "healthy"
         m["post_onset_rmse"] = m["rmse_pos"]
         m["post_onset_peak"] = m["peak_pos"]
+        m["post_onset_rmse_yaw"] = m["rmse_yaw"]
+        m["time_to_task_tol"] = m["completion_time"]
 
     # eligibility interval durations, for the separate duration statistics
     g = np.asarray(a["gate"], dtype=int)
@@ -218,8 +301,9 @@ def _job(args):
     if record_trace:
         a = log.arrays()
         m["_trace"] = {k: np.asarray(a[k]).tolist() for k in
-                       ("x_true", "x_hat", "ref_score", "u_prop", "u_applied",
-                        "dt_on", "gate", "accepted", "slack_cmd", "e_P", "accel",
+                       ("x_true", "x_hat", "ref_score", "u_prop", "u_nom_tx",
+                        "pulse_command_s", "pulse_actual_s", "gate", "accepted",
+                        "slack_cmd", "slack_fb", "action_src", "e_P", "accel",
                         "z_ctx", "fault_skip", "pose_valid")}
         m["_trace"]["onset"] = sc.onset_step
     return m
@@ -236,6 +320,14 @@ def calibrate(cert, workers=12):
 
     Disabling the check is deliberate: calibrating eta while the check is already
     rejecting would make the threshold depend on itself.
+
+    Sec 6.3 LABELLING. None of these three is a statistical certificate threshold.
+    `tol` is a baseline-relative diagnostic (the declared TASK spec is separate and
+    fixed in TASK_TOL_POS/YAW). `R` is an operating envelope read off observed
+    behaviour. `eta` is selected by calibration-split RMSE, which is CONTROLLER
+    TUNING, not the manuscript's conformal procedure; the conformal value is computed
+    alongside for comparison and reported. All three are frozen here, before any test
+    episode is run, and the test split is never consulted.
     """
     print("\n--- calibration pass (split 0, check disabled)")
     seeds = [10_000 + i for i in range(N_CALIB_PER_COND)]
@@ -310,7 +402,15 @@ def calibrate(cert, workers=12):
             "eP_p50": float(np.percentile(out_eP, 50)) if out_eP else None,
             "eP_p99": float(np.percentile(out_eP, 99)) if out_eP else None,
             "selection_rule": "eta minimising calibration-split RMSE over a declared "
-                              "grid; test episodes are disjoint"}
+                              "grid; test episodes are disjoint",
+            "eta_label": "CONTROLLER TUNING, not the manuscript's conformal "
+                         "procedure. The conformal delta=0.025 value is reported "
+                         "as eta_conformal for comparison.",
+            "tol_label": "baseline-relative diagnostic threshold; the declared task "
+                         "specification is separate and fixed in advance",
+            "R_label": "operating envelope from observed ||e||_P, not a verified "
+                       "region of attraction",
+            "frozen_before_test": True}
 
 
 # --------------------------------------------------------------------------
@@ -343,7 +443,60 @@ def block_bootstrap_paired(rows_a, rows_b, key, n_boot=4000, seed=0):
         stats[i] = vals.mean() if vals.size else np.nan
     return {"mean": float(d.mean()), "lo": float(np.nanpercentile(stats, 2.5)),
             "hi": float(np.nanpercentile(stats, 97.5)), "n_pairs": int(d.size),
-            "n_blocks": len(bk)}
+            "n_blocks": len(bk),
+            "level": "episode, CONDITIONAL on the evaluated checkpoints",
+            "n_distinct_scenarios": len({(k[0], k[1]) for k in keys}),
+            "n_rollouts": int(d.size)}
+
+
+def crossed_bootstrap_paired(rows_a, rows_b, key, n_boot=4000, seed=0):
+    """Paired effect a-b resampling BOTH training seeds and episode identities.
+
+    Sec 8.3: the episode-level interval above is conditional on the three trained
+    checkpoints, so it answers "how would this effect vary over episodes for these
+    models". It cannot speak for a broader training-and-deployment population. This
+    crossed procedure resamples training seeds and episode identities together,
+    preserving seed pairing between the two methods, which widens the interval to
+    reflect the training variation. With only three seeds the resulting precision is
+    genuinely poor, and that is the honest state of the evidence: more episodes cannot
+    substitute for missing seed diversity.
+    """
+    ia = {(r["condition"], r["ep_seed"], r["model_seed"]): r[key] for r in rows_a}
+    ib = {(r["condition"], r["ep_seed"], r["model_seed"]): r[key] for r in rows_b}
+    shared = sorted(set(ia) & set(ib), key=str)
+    if not shared:
+        return None
+    seeds = sorted({k[2] for k in shared})
+    eps = sorted({(k[0], k[1]) for k in shared}, key=str)
+    if len(seeds) < 2:
+        return None
+    rng = np.random.default_rng(seed)
+    stats = np.empty(n_boot)
+    for i in range(n_boot):
+        s_pick = [seeds[j] for j in rng.integers(0, len(seeds), size=len(seeds))]
+        e_pick = [eps[j] for j in rng.integers(0, len(eps), size=len(eps))]
+        vals = []
+        for s in s_pick:
+            for (c, es) in e_pick:
+                k = (c, es, s)
+                if k in ia and k in ib:
+                    v = ia[k] - ib[k]
+                    if np.isfinite(v):
+                        vals.append(v)
+        stats[i] = np.mean(vals) if vals else np.nan
+    d = np.array([ia[k] - ib[k] for k in shared], dtype=float)
+    d = d[np.isfinite(d)]
+    # seed-level means, reported because three seeds cannot support much else
+    per_seed = {}
+    for s in seeds:
+        v = [ia[k] - ib[k] for k in shared
+             if k[2] == s and np.isfinite(ia[k] - ib[k])]
+        per_seed[int(s)] = float(np.mean(v)) if v else np.nan
+    return {"mean": float(d.mean()), "lo": float(np.nanpercentile(stats, 2.5)),
+            "hi": float(np.nanpercentile(stats, 97.5)),
+            "n_seeds": len(seeds), "n_distinct_scenarios": len(eps),
+            "per_seed_mean": per_seed,
+            "level": "crossed over training seeds AND episodes"}
 
 
 def agg(vals):
@@ -423,9 +576,19 @@ def report(out, rows, tol):
           f"hold {HOLD_STEPS * C.TS:.1f} s)")
     print("=" * 78)
 
+    print(f"TASK SPEC (declared in advance, fixed across methods): "
+          f"pos <= {TASK_TOL_POS:.2f} m AND yaw <= "
+          f"{np.rad2deg(TASK_TOL_YAW):.0f} deg held for "
+          f"{TASK_DWELL_STEPS * C.TS:.1f} s")
+    print("`draws` counts DISTINCT matched scenario draws; `roll` counts rollouts "
+          "(draws x checkpoints).")
+    print("They are not the same number and only `draws` is an independent-sample "
+          "count.\n")
+
     table = {}
-    hdr = (f"{'condition':11s} {'method':17s} {'RMSE (m)':>15s} {'peak (m)':>16s} "
-           f"{'succ':>9s} {'t_rec (s)':>14s} {'act':>6s} {'rej':>6s}")
+    hdr = (f"{'condition':11s} {'ID':3s} {'method':17s} {'post-onset RMSE':>16s} "
+           f"{'full RMSE':>10s} {'p-o peak':>9s} {'task':>8s} {'draws':>6s} "
+           f"{'roll':>5s} {'elig':>6s} {'sup':>6s}")
     print(hdr)
     print("-" * len(hdr))
     for cond in CONDITIONS:
@@ -435,65 +598,135 @@ def report(out, rows, tol):
             if not sub:
                 continue
             rm = agg([r["rmse_pos"] for r in sub])
-            pk = agg([r["peak_pos"] for r in sub])
+            po = agg([r["post_onset_rmse"] for r in sub])
+            pk = agg([r["post_onset_peak"] for r in sub])
             att = [r for r in sub if r["attempted"]]
             ns = sum(1 for r in att if r["success"])
             tr = agg([r["recovery_time"] for r in att if r["success"]])
             act = agg([r["frac_gate_on"] for r in sub])
             rej = agg([r["frac_reject"] for r in sub])
+            # task success counts EVERY episode in the denominator, including
+            # failures and non-completions
+            n_task = sum(1 for r in sub if r["task_success"])
+            task_rate = n_task / len(sub)
+            n_draws = len({(r["condition"], r["ep_seed"]) for r in sub})
+            sup = agg([r.get("frac_src_supervisor", np.nan) for r in sub])
+            reac = [r for r in att if r.get("mode") == "reacquisition"]
+            maint = [r for r in att if r.get("mode") == "maintenance"]
             srate = (ns / len(att)) if att else float("nan")
             table[f"{cond}|{meth}"] = {
-                "rmse_pos": rm, "peak_pos": pk, "success_rate": srate,
+                "id": METHOD_IDS[meth],
+                "rmse_pos": rm, "peak_pos": agg([r["peak_pos"] for r in sub]),
+                "post_onset_peak": pk,
+                "success_rate": srate,
                 "n_attempted": len(att), "n_success": ns, "recovery_time": tr,
+                "task_success_rate": task_rate, "n_task_success": n_task,
+                "n_episodes": len(sub), "n_distinct_draws": n_draws,
+                "task_held_at_end_rate": float(np.mean(
+                    [r["task_held_at_end"] for r in sub])),
+                "frac_time_in_tol": agg([r["frac_time_in_tol"] for r in sub]),
+                "completion_time": agg([r["completion_time"] for r in sub]),
+                "time_to_task_tol": agg([r["time_to_task_tol"] for r in sub]),
+                "n_reacquisition": len(reac), "n_maintenance": len(maint),
+                "reacq_success_rate": (
+                    float(np.mean([r["success"] for r in reac])) if reac
+                    else float("nan")),
+                "maint_success_rate": (
+                    float(np.mean([r["success"] for r in maint])) if maint
+                    else float("nan")),
                 "frac_gate_on": act, "frac_reject": rej,
+                "frac_supervisor": sup,
+                "frac_src_candidate": agg(
+                    [r.get("frac_src_candidate", np.nan) for r in sub]),
+                "frac_src_fallback_checked": agg(
+                    [r.get("frac_src_fallback_checked", np.nan) for r in sub]),
                 "accel_p95": agg([r["accel_p95"] for r in sub]),
                 "frac_fallback": agg([r["frac_fallback"] for r in sub]),
-                "post_onset_rmse": agg([r["post_onset_rmse"] for r in sub]),
+                "post_onset_rmse": po,
                 "solve_ms_p95": agg([r["solve_ms_p95"] for r in sub])}
-            print(f"{cond:11s} {meth:17s} "
-                  f"{rm['mean']:7.3f}+-{rm['sd']:<6.3f} "
-                  f"{pk['median']:6.2f}[{pk['iqr'][0]:5.2f},{pk['iqr'][1]:5.2f}] "
-                  f"{ns:4d}/{len(att):<4d} "
-                  f"{tr['median']:6.2f}[{tr['iqr'][0]:4.1f},{tr['iqr'][1]:4.1f}] "
-                  f"{act['mean']:6.3f} {rej['mean']:6.4f}")
+            print(f"{cond:11s} {METHOD_IDS[meth]:3s} {meth:17s} "
+                  f"{po['mean']:7.3f}+-{po['sd']:<7.3f} "
+                  f"{rm['mean']:10.3f} {pk['median']:9.2f} "
+                  f"{n_task:3d}/{len(sub):<4d} {n_draws:6d} {len(sub):5d} "
+                  f"{act['mean']:6.3f} {sup['mean']:6.3f}")
         print()
     out["table"] = table
+    out["task_spec"] = {"tol_pos_m": TASK_TOL_POS,
+                        "tol_yaw_rad": float(TASK_TOL_YAW),
+                        "tol_yaw_deg": float(np.rad2deg(TASK_TOL_YAW)),
+                        "dwell_s": TASK_DWELL_STEPS * C.TS,
+                        "deadline_s": TASK_DEADLINE_STEPS * C.TS,
+                        "provenance": "provisional development values declared "
+                                      "before the final test; NOT measured "
+                                      "spacecraft requirements"}
 
     # ---- paired effects ----
     print("=" * 78)
-    print("PAIRED EFFECTS  (block bootstrap over parent episodes, 95% CI)")
+    print("TABLE B  causal component comparisons (Sec 7.1 / 12)")
     print("=" * 78)
-    pairs = [("full", "no_impact", "behavioural supervision (lambda_I)"),
-             ("full", "constant_context", "inferring a CHANGING context"),
-             ("full", "adaptive_mpc", "learned context vs adaptive MPC"),
-             ("full", "zero_context", "vs the hardware comparator"),
-             ("full", "full_no_check", "post-allocation acceptance check")]
+    print("PRIMARY ENDPOINT, declared in advance: post-onset position RMSE,")
+    print("primary comparison M3 - M2 (behavioural supervision).")
+    print("Everything else below is exploratory and is labelled as such.\n")
+    # Sec 7.1: M2-M1 isolates changing context (both have no behavioural loss);
+    # M3-M1 would change two things at once and cannot isolate either.
+    pairs = [("full", "no_impact", "M3-M2 behavioural supervision", True),
+             ("no_impact", "constant_context", "M2-M1 changing context", False),
+             ("full", "nominal_recovery", "M3-M0 learned residual", False),
+             ("full", "fallback_only", "M3-M5 MPC beyond fallback", False),
+             ("full", "full_no_check", "M3-M4 post-allocation check", False),
+             ("full", "adaptive_mpc", "M3-M6 vs adaptive baseline", False),
+             ("full", "zero_context", "M3-HW vs hardware comparator", False)]
     eff = {}
-    for a, b, label in pairs:
-        print(f"\n  {a} - {b}   [{label}]")
+    for a, b, label, is_primary in pairs:
+        mark = "  <== PRIMARY" if is_primary else "  (exploratory)"
+        print(f"\n  {METHOD_IDS[a]}-{METHOD_IDS[b]}  {label}{mark}")
         for cond in CONDITIONS:
             ra = [r for r in rows if r["method"] == a and r["condition"] == cond]
             rb = [r for r in rows if r["method"] == b and r["condition"] == cond]
-            # Pair on episode identity. A variant that exists on fewer seeds is
-            # broadcast across the other side's seeds, so pairing stays one-to-one on
-            # (condition, ep_seed, model_seed) and no episode is silently dropped.
+            # Pair on episode identity AND checkpoint where both sides have seeds.
+            # Broadcasting is only permitted when one side genuinely does not depend
+            # on the training seed; it is recorded so the reader knows which is which.
             sa = sorted({r["model_seed"] for r in ra})
             sb = sorted({r["model_seed"] for r in rb})
+            broadcast = None
             if len(sb) < len(sa):
                 rb = [dict(r, model_seed=ms) for r in rb for ms in sa]
+                broadcast = b
             elif len(sa) < len(sb):
                 ra = [dict(r, model_seed=ms) for r in ra for ms in sb]
-            for key in ("rmse_pos", "post_onset_rmse", "peak_pos"):
+                broadcast = a
+            for key in ("post_onset_rmse", "rmse_pos", "post_onset_peak",
+                        "task_success"):
                 st = block_bootstrap_paired(ra, rb, key)
                 if st is None:
                     continue
-                sig = "" if (st["lo"] <= 0 <= st["hi"]) else "  *"
+                st["broadcast_side"] = broadcast
                 eff[f"{a}-{b}|{cond}|{key}"] = st
-                if key == "rmse_pos":
-                    print(f"    {cond:11s} dRMSE {st['mean']:+7.4f} m  "
-                          f"[{st['lo']:+7.4f}, {st['hi']:+7.4f}]  "
-                          f"n={st['n_blocks']} blocks{sig}")
+                if key == "post_onset_rmse" and broadcast is None:
+                    cx = crossed_bootstrap_paired(ra, rb, key)
+                    if cx is not None:
+                        eff[f"{a}-{b}|{cond}|{key}|crossed"] = cx
+            st = eff.get(f"{a}-{b}|{cond}|post_onset_rmse")
+            if st:
+                sig = "" if (st["lo"] <= 0 <= st["hi"]) else "  *"
+                cx = eff.get(f"{a}-{b}|{cond}|post_onset_rmse|crossed")
+                extra = (f"   crossed [{cx['lo']:+.4f}, {cx['hi']:+.4f}]"
+                         if cx else "")
+                print(f"    {cond:11s} d(post-onset RMSE) {st['mean']:+7.4f} m  "
+                      f"episode-CI [{st['lo']:+7.4f}, {st['hi']:+7.4f}]{sig}"
+                      f"{extra}")
+                print(f"    {'':11s}   {st['n_distinct_scenarios']} distinct "
+                      f"scenario draws, {st['n_rollouts']} rollouts"
+                      + (f", {broadcast} broadcast across seeds"
+                         if broadcast else ""))
     out["paired_effects"] = eff
+    out["primary_endpoint"] = {
+        "metric": "post_onset_rmse",
+        "comparison": "full - no_impact (M3 - M2)",
+        "declared": "before the final test run",
+        "task_tolerance_m": TASK_TOL_POS,
+        "interpretation": "effect size is judged against the task tolerance as "
+                          "well as against its confidence interval"}
 
     # ---- seed-level results, required with only three seeds ----
     print("\n" + "=" * 78)

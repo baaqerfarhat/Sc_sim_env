@@ -119,9 +119,16 @@ def probe_signature(probe_log, w_a=None, eps_G=1e-3, eps_exc=1e-4):
     """q_s from a probe branch.
 
     Combines body-frame command response (Ghat, chat) by regularised least squares
-    of physical body-frame acceleration against the transmitted-equivalent wrench,
-    estimator behaviour (innovation moments and availability), and the physical
-    probe tracking cost J_p.
+    of physical body-frame acceleration against the NOMINAL-EQUIVALENT TRANSMITTED
+    wrench, estimator behaviour (innovation moments and availability), and the
+    physical probe tracking cost J_p.
+
+    The regressor choice is what makes the signature informative. Regressing the
+    physical response against the already fault-reduced wrench, as an earlier
+    version did, divides out the very impairment the signature is supposed to
+    describe: Ghat then comes back near nominal whatever the actuation fault is
+    doing. Physical ground truth on the left-hand side is allowed here because this
+    is an offline probe branch, not a deployment input.
 
     Returns (q, ok, excitation). `ok` is False when the branch is under-excited, in
     which case the branch is omitted from the signature loss but its ordinary
@@ -129,7 +136,7 @@ def probe_signature(probe_log, w_a=None, eps_G=1e-3, eps_exc=1e-4):
     """
     a = probe_log
     xt = a["x_true"]
-    u = a["u_applied"]
+    u = a["u_nom_tx"]
     n = len(xt) - 1
     if n < 8:
         return None, False, 0.0
