@@ -255,11 +255,14 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
         ref_prev = ref_gen.preview(policy.mpc.N)
         r_committed_next = ref_prev[1].copy()
 
+        # policy.act performs the SOFTWARE commit (allocator memory) only. The hidden
+        # fault slot is consumed here, by the evaluator, through the same `realize`
+        # call the data-generation shorthand uses, so both paths apply the hidden
+        # effect at the same counter state.
         out = policy.act(k, x_hat, ref_prev, chain, hist)
         hist["u_nom_tx"][k] = out["u_nominal_transmitted"]
 
-        pulse_actual, skipped = chain.apply_hidden(out)
-        out["pulse_actual_s"], out["fault_skip"] = pulse_actual, skipped
+        pulse_actual, skipped = chain.realize(out)
         x_next = P.plant_step(x, pulse_actual, eta_smooth=eta_s,
                               mass=sc.mass, jzz=sc.jzz, drag=sc.drag,
                               yaw_damp=sc.yaw_damp)
@@ -296,9 +299,25 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
 
         x = x_next
 
+    # Sec 5.1: task completion must be scored against the FINAL intended waypoint and
+    # heading, so the target is recorded here rather than reconstructed from whichever
+    # setpoint happened to be current at the end of the episode. Families with no rest
+    # point return None, and completion is then undefined rather than failed.
+    _ft = getattr(ref_gen, "final_target", None)
+    _ft = None if _ft is None else _ft()
     log.meta.update({"switch_step": getattr(ref_gen, "switch_step", None),
+                     "final_target": None if _ft is None else np.asarray(_ft).tolist(),
+                     "reference_family": getattr(ref_gen, "name", None),
                      "n_fault_skips": chain.fault.n_skips,
                      "policy_stats": dict(policy.stats),
                      "has_recovery": bool(getattr(policy, "has_recovery", False)),
-                     "check_mode": getattr(policy, "check_mode", "off")})
+                     "check_mode": getattr(policy, "check_mode", "off"),
+                     # Sec 4.2: the safeguards are independent, so record each one
+                     # rather than inferring them all from check_mode.
+                     "enforce_eligibility": bool(
+                         getattr(policy, "enforce_eligibility", False)),
+                     "enforce_first_action": bool(
+                         getattr(policy, "enforce_first_action", False)),
+                     "enforce_post_alloc": bool(
+                         getattr(policy, "enforce_post_alloc", False))})
     return log

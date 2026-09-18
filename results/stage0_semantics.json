@@ -12,13 +12,13 @@
    "pass": true,
    "detail": "5 trials: max drift 0.0e+00, memory unchanged True, fault counter 0->0"
   },
-  "2.4d one commit = one memory update and one fault slot": {
+  "2.4d software commit updates memory; realize consumes one fault slot": {
    "pass": true,
-   "detail": "fault cycle 0->1; committed packet is the selected one: True"
+   "detail": "commit left the fault cycle at 0 (memory-only: True) and committed the selected packet (True); realize then advanced it to 1. Separating the two is what lets both execution paths consume the hidden slot at the same point."
   },
   "2.4f data-generation and policy paths fire identical physical pulses": {
-   "pass": false,
-   "detail": "12 of 12 (firing fraction, phase) configurations produce different fire/skip sequences between the two execution paths; e.g. (0.3, 0). The policy path advances the fault counter in commit() before apply_hidden() previews it, so it runs one cycle ahead of the shorthand used to generate training data."
+   "pass": true,
+   "detail": "12/12 (firing fraction, phase) configurations produce identical fire/skip sequences AND identical counter sequences across both execution paths. Both route the hidden effect through realize(), so the software allocator commit and the physical fault slot are consumed at the same point on every path."
   },
   "2.4e u_k reconstructs from commanded pulses and nominal parameters": {
    "pass": true,
@@ -58,7 +58,7 @@
   },
   "4.6c every step is accounted for by exactly one declared outcome": {
    "pass": true,
-   "detail": "of 120 steps: 31 candidate, 78 diverted by the eta-free first-action condition, 10 by command admissibility / acceptance, 1 supervisor. A permissive eta cannot rescue the first-action condition by construction, which is why that share stays high."
+   "detail": "of 120 steps: 31 candidate, 78 diverted by the eta-free first-action condition, 0 by the post-allocation decrease test, 10 by the command-admissibility budget, 0 by solver failure, 1 supervisor. A permissive eta cannot rescue the first-action condition by construction, which is why that share stays high; note the decrease test rejects 0, since a candidate that already passed the tighter eta-free condition passes it too."
   },
   "4.6d candidate and fallback slacks are recorded separately": {
    "pass": true,
@@ -73,11 +73,9 @@
    "detail": "6600 sampled points: worst (|dA| - E_A) = +0.000e+00, worst (|dB| - E_B) = +0.000e+00; both must be <= 0. Passing does NOT certify the continuum, only that no counterexample was found (step, span 0.05)."
   }
  },
- "n_pass": 17,
+ "n_pass": 18,
  "n_checks": 18,
- "failures": [
-  "2.4f data-generation and policy paths fire identical physical pulses"
- ],
- "manifest_hash": "57bea4173319b8f6",
- "wall_time_s": 13.819478750228882
+ "failures": [],
+ "manifest_hash": "07f277768a04859a",
+ "wall_time_s": 14.501393795013428
 }

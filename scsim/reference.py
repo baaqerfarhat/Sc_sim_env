@@ -56,6 +56,17 @@ class StepSetpointReference:
         reference change by a supervisor."""
         return self.current()
 
+    def final_target(self):
+        """The FINAL intended waypoint and heading.
+
+        Task completion has to be judged against this, not against whichever waypoint
+        happens to be current. Scoring a dwell at the current setpoint credits the
+        vehicle for sitting at an intermediate waypoint - possibly before the fault
+        even arrives - which is not completion of the commanded task.
+        """
+        p = self.wp[-1]
+        return np.array([p[0], p[1], 0.0, 0.0, self.psi_ref, 0.0])
+
 
 class SmoothFeasibleReference:
     """Dynamically feasible rest-to-rest profile over the same 3 m Manhattan path.
@@ -120,6 +131,11 @@ class SmoothFeasibleReference:
     def scoring_reference(self, k):
         return self.state_at(k * C.TS)
 
+    def final_target(self):
+        """End of the last leg, at rest. The profile is time-parameterised, so this is
+        the state after every leg has completed."""
+        return self.state_at(float(self.t_switch[-1]))
+
 
 class TransferReference:
     """A HELD-OUT family, used for transfer evaluation only and never for training.
@@ -174,6 +190,13 @@ class TransferReference:
 
     def scoring_reference(self, k):
         return self.state_at(k * C.TS)
+
+    def final_target(self):
+        """This family is a closed, continuously curving path with no rest point, so
+        it has no terminal waypoint. Task completion in the waypoint sense is
+        undefined here, and callers must score tracking error instead of completion.
+        """
+        return None
 
 
 # families that may appear in TRAINING data, and the one reserved for transfer

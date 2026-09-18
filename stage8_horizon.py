@@ -40,7 +40,10 @@ import stage6_methods as s6
 RES = "results"
 os.makedirs(RES, exist_ok=True)
 
-HORIZONS = (12, 20, 30, 40, 50)
+# 10 is the manuscript's stated horizon and 12 is the build spec's; the discrepancy
+# is unresolved, so both are swept and reported rather than one being assumed. The
+# longer values probe whether more preview would help at all.
+HORIZONS = tuple(sorted(set(C.N_HORIZON_CANDIDATES) | {20, 30, 40, 50}))
 N_EP_PER_CELL = 24
 
 
@@ -99,7 +102,46 @@ def horizon_sweep(cert, tol, workers=8):
                   f"{pk['median']:9.3f} {ac['mean']:8.4f} {rj['mean']:8.4f} "
                   f"{sn['mean']:8.4f} {ms['mean']:8.2f}")
         print()
+
+    # The deployed horizon is DISPUTED: the build spec says 12, the manuscript says
+    # 10, and neither has been checked against the flight configuration for the
+    # reported logs. Rather than assume one, compare them directly on matched scenario
+    # draws so the discrepancy becomes a reported robustness axis. If the paired
+    # difference is small relative to the effects being claimed, no conclusion in the
+    # paper depends on resolving it.
+    n_a, n_b = C.N_HORIZON_MANUSCRIPT, C.N_HORIZON_HW
+    horizon_pair = {}
+    print(f"--- horizon robustness: N={n_a} (manuscript) vs N={n_b} (build spec), "
+          f"matched draws")
+    for cond in ("healthy", "combined"):
+        pa = {r["ep_seed"]: r for r in rows if r["N"] == n_a
+              and r["condition"] == cond}
+        pb = {r["ep_seed"]: r for r in rows if r["N"] == n_b
+              and r["condition"] == cond}
+        common = sorted(set(pa) & set(pb))
+        if not common:
+            continue
+        d = np.array([pa[s]["rmse_pos"] - pb[s]["rmse_pos"] for s in common])
+        rng_b = np.random.default_rng(1234)
+        bs = np.array([np.mean(rng_b.choice(d, d.size, replace=True))
+                       for _ in range(4000)])
+        lo, hi = np.percentile(bs, [2.5, 97.5])
+        horizon_pair[cond] = {"mean": float(d.mean()), "lo": float(lo),
+                              "hi": float(hi), "n_pairs": len(common),
+                              "N_a": n_a, "N_b": n_b,
+                              "significant": bool(hi < 0 or lo > 0)}
+        print(f"  {cond:10s} dRMSE(N={n_a} - N={n_b}) = {d.mean():+.4f} m "
+              f"[{lo:+.4f}, {hi:+.4f}]  n={len(common)}  "
+              f"{'SIGNIFICANT' if (hi < 0 or lo > 0) else 'not significant'}")
+    print()
+
     return {"table": table, "rows": rows,
+            "horizon_pair": horizon_pair,
+            "disputed_horizon": {
+                "manuscript": n_a, "build_spec": n_b,
+                "status": "unresolved; not checked against the flight configuration "
+                          "attached to the reported hardware logs, so both are "
+                          "reported"},
             "note": "N is swept in closed loop because the certificate is a one-step "
                     "contraction under K and does not contain N. Acceptance rate is "
                     "the operational reading of 'achievable per-solve correction'."}

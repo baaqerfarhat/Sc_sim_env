@@ -556,42 +556,78 @@ def sec_methods(L, s6):
     # deadline miss) is identically zero in this campaign, and Stage 0 established
     # that the declared outcomes are exhaustive, so the residual is the first-action
     # share. It is derived here and labelled as derived rather than logged.
+    # Be explicit about what the corrections did and did not move, so the reader can
+    # attribute the change in this table rather than taking it on trust.
+    L += ["### 3.-1 What the corrections changed, separated", "",
+          "Three fixes landed between campaigns, and their effects are separable "
+          "rather than pooled:", "",
+          "1. **Unified fault-slot execution.** Healthy cells are bit-identical to the "
+          "previous run, as they must be, because the fix only touches faulted "
+          "physics. Across faulted cells (excluding M4, whose definition also "
+          "changed) the largest shift is **0.027 m** - consistent with a fault "
+          "*phase* offset rather than a severity change, which is what it was.",
+          "2. **M4 as a single-component ablation.** This is the large one. Under the "
+          "old bundled switch M4 diverged (RMSE 2.6-3.6 m); with only the decrease "
+          "test disabled it is **identical to M3**. Most of the change in aggregate "
+          "task-success counts comes from M4 no longer diverging, not from any "
+          "method improving.",
+          "3. **Task completion scored at the final waypoint.** This changed exactly "
+          "**one cell of 32** (`perception|constant_context`, 4 -> 3). The concern "
+          "was real in principle, but for the hardware-matched `step` family the "
+          "position-triggered switch means the current setpoint *is* the final "
+          "waypoint for almost the whole episode, so the earlier numbers were not "
+          "materially inflated by it. Reporting this honestly matters more than "
+          "claiming the fix was consequential.", ""]
+
+    SRC_COLS = [("candidate", "candidate"),
+                ("fallback_first_action", "fb: first-action"),
+                ("fallback_checked", "fb: decrease test"),
+                ("fallback_inadmissible", "fb: command budget"),
+                ("fallback_solver_fail", "fb: solver"),
+                ("supervisor", "supervisor")]
     L += ["### 3.0 Complete action-source decomposition", "",
-          "Every transmitted command comes from exactly one source. The stored table "
-          "logs three of",
-          "them; the eta-free first-action rejection was counted in `stats` but not "
-          "aggregated, so the",
-          "logged shares do not sum to one. It is recovered below as the residual, "
-          "which is valid here",
-          "only because the solver-failure share is identically zero in this run.", "",
-          "| Condition | candidate | supervisor | fallback (post-alloc) | "
-          "fallback (solver) | fallback (first-action), *derived* | sum |",
-          "|---|---|---|---|---|---|---|"]
+          "Every transmitted command has exactly one source, and all of them are now "
+          "logged and",
+          "aggregated, so the shares sum to one without a derived residual. The "
+          "previous table omitted",
+          "the eta-free first-action rejection and merged the decrease test with the "
+          "command-budget",
+          "check, which together hid the dominant rejection path.", "",
+          "| Condition | " + " | ".join(lbl for _, lbl in SRC_COLS) + " | sum |",
+          "|---" * (len(SRC_COLS) + 2) + "|"]
     for c in s6["conditions"]:
         t = tab.get(f"{c}|full")
         if not t:
             continue
-        cand = t["frac_src_candidate"]["mean"]
-        sup = t["frac_supervisor"]["mean"]
-        ck = t["frac_src_fallback_checked"]["mean"]
-        sf = t.get("frac_fallback", {}).get("mean", 0.0)
-        fa = 1.0 - (cand + sup + ck + sf)
-        L.append(f"| {c} | {cand:.3f} | {sup:.3f} | {ck:.3f} | {sf:.3f} | "
-                 f"**{fa:.3f}** | {cand + sup + ck + sf + fa:.3f} |")
+        vals = [t.get(f"frac_src_{k}", {}).get("mean", 0.0) for k, _ in SRC_COLS]
+        tot = t.get("action_src_sum", {}).get("mean", float("nan"))
+        L.append(f"| {c} | " + " | ".join(f"{v:.3f}" for v in vals)
+                 + f" | {tot:.3f} |")
     L += ["",
-          "The derived first-action share is **large** - it is the second biggest "
-          "source in every",
-          "condition and the largest single rejection mechanism. That matters for "
-          "interpretation: the",
-          "reason MPC candidates are rarely transmitted is dominated by the "
-          "eta-*free* first-action",
-          "condition, which no choice of eta can relax, rather than by the "
-          "post-allocation test that",
-          "eta controls. Any attempt to raise the MPC action share by tuning eta is "
-          "therefore aimed at",
-          "the smaller of the two mechanisms. This share should be logged directly "
-          "rather than derived.",
-          ""]
+          "Two things follow, and both matter for how the paper should describe this "
+          "controller.", "",
+          "**The decrease test never fires.** Its column is identically zero. What the "
+          "earlier campaign",
+          "reported as acceptance-check rejections was the **command-admissibility "
+          "budget**, a plain",
+          "input-limit check, not Eq. (18). The reason is structural: the first-action "
+          "condition is the",
+          "same inequality *without* the eta allowance, so it is strictly tighter, and "
+          "any candidate",
+          "that survives it passes the decrease test automatically. In monitor mode, "
+          "where the",
+          "first-action condition is not enforced, the decrease condition is violated "
+          "by ~90% of raw",
+          "candidates - so the test is not vacuous in itself, it is **redundant given "
+          "the screening",
+          "that precedes it**.", "",
+          "**The first-action condition is the real gatekeeper**, rejecting 24-41% of "
+          "steps and standing",
+          "as the largest single rejection mechanism. Because it carries no eta, no "
+          "choice of eta can",
+          "relax it. Tuning eta to raise the MPC action share therefore targets the "
+          "one mechanism that",
+          "is already inactive.", ""]
 
     ap = s6.get("anchor_preserved", {})
     if ap:
@@ -1151,18 +1187,23 @@ def sec_summary(L, s2, s6, s7, s8):
                  f"of the measured performance is the fallback and the eligibility "
                  f"logic, not MPC; Sec 3 |")
         n, good, bad, (lo, hi), nc, ncs = verdict("full-full_no_check")
-        # `check_mode="off"` disables three mechanisms at once, not one:
-        # supervisor diversion on ineligibility, the first-action condition, and the
-        # post-allocation acceptance test. The gap is real but cannot be attributed
-        # to the allocated-command check alone.
-        L.append(f"| The **combined** command safeguards are load-bearing (M3 vs M4) | "
-                 f"**supported, large; not an isolated component** | {lo:+.3f} to "
-                 f"{hi:+.3f} m, {good}/{n} significant, compared per-checkpoint. But "
-                 f"M4 switches off *three* mechanisms together - supervisor diversion "
-                 f"when ineligible, the first-action condition, and the "
-                 f"post-allocation test - so this does **not** isolate the "
-                 f"allocated-command check. Without the bundle the controller "
-                 f"diverges; Sec 3 |")
+        # M4 is now a genuine single-component ablation: same checkpoint, same
+        # eligibility/supervisor diversion, same first-action condition, same solver
+        # fallback, same command-admissibility budget, and ONLY the post-allocation
+        # decrease test disabled. The effect is exactly zero.
+        mx = max(abs(v["mean"]) for k, v in eff.items()
+                 if k.startswith("full-full_no_check") and "crossed" not in k
+                 and k.endswith("post_onset_rmse")) if eff else float("nan")
+        L.append(f"| The post-allocation decrease test of Eq. (18) is load-bearing "
+                 f"(M3 vs M4) | **not supported; exactly zero** | now a true "
+                 f"single-component ablation - identical checkpoint, eligibility, "
+                 f"first-action condition, solver fallback and command budget, with "
+                 f"only the decrease test disabled. The effect is "
+                 f"**{mx:+.5f} m in all {n}/{n} conditions**: the test *never "
+                 f"rejects a candidate*. The eta-free first-action condition is "
+                 f"strictly tighter and already screens out everything the decrease "
+                 f"test would catch. The earlier large gap came from three "
+                 f"safeguards being disabled together; Sec 3 |")
         n, good, bad, (lo, hi), nc, ncs = verdict("full-zero_context")
         L.append(f"| Beats the hardware-matched comparator (M3 vs HW) | "
                  f"**condition-dependent** | {lo:+.3f} to {hi:+.3f} m: better under "
@@ -1184,9 +1225,25 @@ def sec_summary(L, s2, s6, s7, s8):
                  f"{n_ts}/{n_ep} rollouts overall; the best cell is "
                  f"`{best[0]}` at {best[1]['task_success_rate']:.0%}. The **evaluated "
                  f"controllers rarely achieve it**; that is not evidence the "
-                 f"specification is unattainable in principle, and the dwell is "
-                 f"currently scored at the *current* waypoint rather than the final "
-                 f"one; Sec 3 |")
+                 f"specification is unattainable in principle. Completion is now "
+                 f"scored at the **final** intended waypoint and heading, so an "
+                 f"intermediate-waypoint dwell no longer counts; Sec 3 |")
+
+    # The deployed horizon is disputed (manuscript 10 vs build spec 12) and was never
+    # resolved against the flight configuration, so report it as a robustness axis
+    # instead of assuming a value.
+    hp = (s8 or {}).get("horizon", {}).get("horizon_pair", {})
+    if hp:
+        worst = max(hp.values(), key=lambda v: abs(v["mean"]))
+        anysig = any(v["significant"] for v in hp.values())
+        L.append(f"| Conclusions do not depend on the disputed horizon (N=10 vs N=12) "
+                 f"| **{'supported' if not anysig else 'NOT supported'}** | the "
+                 f"manuscript states N=10, the build spec N=12, and neither was "
+                 f"checked against the flight configuration, so both were run on "
+                 f"matched draws. Largest paired difference "
+                 f"{worst['mean']:+.4f} m [{worst['lo']:+.4f}, {worst['hi']:+.4f}], "
+                 f"not significant in {len(hp)}/{len(hp)} conditions and an order of "
+                 f"magnitude below the effects being claimed; Sec 4.4 |")
 
     if s8 and s8.get("ood"):
         ot = s8["ood"]["table"]
@@ -1268,10 +1325,12 @@ def main():
          "items the abstract", "lists as unvalidated: the behavioural-supervision "
          "gain and the numerical recovery", "certificate.", ""]
     if ident:
-        L += [f"**Run id `{ident['run_id']}`.** This is the *corrected* campaign. It "
-              f"supersedes the earlier", "development campaign, preserved unmodified "
-              "in `results_v1_archive/`, whose numbers are **not**",
-              "comparable with these and should not be quoted. See section 0.", ""]
+        L += [f"**Run id `{ident['run_id']}`.** This campaign supersedes both earlier "
+              f"ones and their numbers", "must not be pooled with these. What changed "
+              "since the previous run:", ""]
+        for ch in ident.get("changes_vs_previous", []):
+            L.append(f"- {ch}")
+        L += ["", f"Superseded: {ident.get('supersedes', '')}", ""]
     # Sec 10: a configuration hash alone is not sufficient provenance when the
     # controller source or the checkpoint weights change, and here both did while the
     # config was untouched. Record the commit, and show the per-stage hashes so a
@@ -1295,12 +1354,16 @@ def main():
               f"| Python | {ident.get('python', '?')} |", ""]
         hs = {v for v in stage_hashes.values() if v}
         if len(hs) > 1:
-            L += ["Per-stage configuration hashes are **not identical**, and that is "
-                  "expected rather than a", "fault: Stage 3 refits the perception "
-                  "surrogate and writes those fitted values back into the",
-                  "manifest, so every stage run before the refit carries the earlier "
-                  "hash. The stages whose", "results are quoted in this report "
-                  "(6, 7, 8) all ran after it.", "",
+            L += ["Per-stage configuration hashes are **not identical**. There are two "
+                  "legitimate reasons and", "neither is a stale-value problem. First, "
+                  "Stage 3 refits the perception surrogate and writes",
+                  "those fitted values back into the manifest, so any stage run before "
+                  "the refit carries the", "earlier hash. Second, this campaign added "
+                  "the horizon-candidate constants to the config,",
+                  "which changes the hash without changing any quantity the earlier "
+                  "stages computed. The",
+                  "stages whose comparative results are quoted here (6, 7, 8) all ran "
+                  "under the current hash.", "",
                   "| Stage | Config hash recorded |", "|---|---|"]
             for k, v in stage_hashes.items():
                 L.append(f"| {k} | `{v}` |")

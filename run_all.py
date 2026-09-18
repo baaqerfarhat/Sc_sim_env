@@ -75,7 +75,11 @@ def run(stage):
     return rc
 
 
-RUN_ID = "v2-corrected"
+# Sec 2 of the retention plan: a campaign whose CONTROLLER changed gets its own
+# identifier. v3 unified the fault-slot execution contract, made M4 a
+# single-component ablation, scored task completion at the final waypoint and swept
+# both candidate horizons. Its numbers must not be pooled with v2's.
+RUN_ID = "v3-contract-and-ablation"
 
 
 def write_run_identity():
@@ -98,9 +102,25 @@ def write_run_identity():
         "git_dirty": bool(sh("git", "status", "--porcelain")),
         "python": sys.version.split()[0],
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "supersedes": "results_v1_archive (development campaign; its information "
-                      "boundary, plant rotation and fallback selection were defective "
-                      "and its numbers are not comparable with these)",
+        "supersedes": (
+            "v1 (results_v1_archive): defective information boundary, plant rotation "
+            "and fallback selection. v2 (run id v2-corrected): fixed those, but "
+            "applied the hidden fault one cycle early in the closed-loop path, "
+            "bundled three safeguards into the M4 ablation, and scored task "
+            "completion at the current rather than the final waypoint. Neither is "
+            "comparable with these numbers."),
+        "changes_vs_previous": [
+            "single physical execution contract: commit() is software-only, realize() "
+            "previews then consumes exactly one fault slot, on every path",
+            "M4 is a single-component ablation: only the Eq. (18) post-allocation "
+            "decrease test is disabled; eligibility, first-action, solver fallback "
+            "and the command-admissibility budget remain enforced",
+            "all action sources logged and aggregated; shares sum to one",
+            "task completion scored at the FINAL waypoint and heading; recovery is "
+            "onset-relative with maintenance and reacquisition separated",
+            "both candidate horizons (manuscript N=10, build spec N=12) swept and "
+            "compared on matched draws",
+        ],
     }
     os.makedirs("results", exist_ok=True)
     with open("results/run_identity.json", "w") as f:

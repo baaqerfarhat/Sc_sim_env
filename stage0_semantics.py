@@ -129,54 +129,61 @@ def sec2_one_commit_one_slot():
     _, info_a = ch.trial(u_a, 0.0)
     _, info_b = ch.trial(u_b, 0.0)          # a second candidate, not transmitted
     cyc0 = ch.fault.fault_cycle
-    ch.commit(info_b)                        # transmit exactly one packet
-    advanced_once = ch.fault.fault_cycle == cyc0 + 1
+    ch.commit(info_b)                        # SOFTWARE commit: allocator memory only
+    mem_only = ch.fault.fault_cycle == cyc0
     committed_b = np.allclose(
         ch.use_hist,
         P.update_use_hist(np.zeros(8), info_b["_F_for_commit"]))
-    check("2.4d one commit = one memory update and one fault slot",
-          advanced_once and committed_b,
-          f"fault cycle {cyc0}->{ch.fault.fault_cycle}; committed packet is the "
-          f"selected one: {committed_b}")
+    ch.realize(info_b)                       # evaluator: consume one physical slot
+    advanced_once = ch.fault.fault_cycle == cyc0 + 1
+    check("2.4d software commit updates memory; realize consumes one fault slot",
+          mem_only and committed_b and advanced_once,
+          f"commit left the fault cycle at {cyc0} (memory-only: {mem_only}) and "
+          f"committed the selected packet ({committed_b}); realize then advanced it "
+          f"to {ch.fault.fault_cycle}. Separating the two is what lets both execution "
+          f"paths consume the hidden slot at the same point.")
 
 
 def sec2_one_execution_contract():
     """The data-generation path and the policy path must realise the hidden fault at
     the SAME counter state.
 
-    `CommandChain.__call__` (used by data generation) previews the fault and then
-    advances. The policy path advances inside `policy.act`'s `chain.commit` and only
-    then calls `apply_hidden`, so it runs the schedule one cycle early. That makes the
-    training and evaluation distributions differ at packet level for the same
-    commanded pulses, which is precisely the correspondence a learned residual relies
-    on. The skip RATE is unchanged, so this is a phase defect rather than a severity
-    defect, but it still has to be one contract.
+    Both paths must route the hidden effect through `CommandChain.realize`, which
+    previews and then advances. An earlier version advanced the counter inside
+    `commit` (called by `policy.act`) and previewed afterwards in the runner, so
+    closed-loop evaluation ran the fault schedule one cycle ahead of the shorthand
+    used to generate training data. Identical commanded packets then fired in one
+    path and skipped in the other. The skip RATE was unchanged, so that was a phase
+    defect rather than a severity defect, but it still broke packet-level
+    correspondence between the training and evaluation distributions.
     """
     u_star = np.array([0.35, -0.22, 0.05])
-    disagree = []
+    disagree, n_cfg = [], 0
     for frac in (0.3, 0.5, 0.7, 0.9):
         for phase in (0, 1, 2):
+            n_cfg += 1
             a, b = [], []
             ch = _fresh_chain(frac, True, phase=phase)
             for _ in range(8):
-                _, info = ch(u_star, 0.0)                  # shorthand path
-                a.append(not info["fault_skip"])
+                _, info = ch(u_star, 0.0)                  # data-generation shorthand
+                a.append((not info["fault_skip"], ch.fault.fault_cycle))
             ch = _fresh_chain(frac, True, phase=phase)
             for _ in range(8):
                 _, info = ch.trial(u_star, 0.0)
-                ch.commit(info)                            # what policy.act does
-                _, skipped = ch.apply_hidden(info)         # what the runner does
-                b.append(not skipped)
+                ch.commit(info)                 # what policy.act does (software only)
+                _, skipped = ch.realize(info)   # what the runner does (evaluator)
+                b.append((not skipped, ch.fault.fault_cycle))
             if a != b:
                 disagree.append((frac, phase))
     check("2.4f data-generation and policy paths fire identical physical pulses",
           not disagree,
-          f"{len(disagree)} of 12 (firing fraction, phase) configurations produce "
-          f"different fire/skip sequences between the two execution paths"
-          + (f"; e.g. {disagree[0]}" if disagree else "")
-          + ". The policy path advances the fault counter in commit() before "
-            "apply_hidden() previews it, so it runs one cycle ahead of the "
-            "shorthand used to generate training data.")
+          f"{n_cfg - len(disagree)}/{n_cfg} (firing fraction, phase) configurations "
+          f"produce identical fire/skip sequences AND identical counter sequences "
+          f"across both execution paths"
+          + (f"; disagreeing: {disagree}" if disagree else
+             ". Both route the hidden effect through realize(), so the software "
+             "allocator commit and the physical fault slot are consumed at the same "
+             "point on every path."))
 
 
 def sec2_reconstruct_u_from_pulses():
@@ -361,17 +368,25 @@ def sec4_selection_semantics():
     n_fa = sum(1 for s in src2 if s == "fallback_first_action")
     n_ck = sum(1 for s in src2 if s == "fallback_checked")
     n_sup = sum(1 for s in src2 if s == "supervisor")
+    # the decrease test and the command-admissibility budget are now SEPARATE
+    # outcomes, because only the former is ablatable; both must be counted
+    n_adm = sum(1 for s in src2 if s == "fallback_inadmissible")
+    n_slv = sum(1 for s in src2 if s in ("fallback_solver_fail",
+                                         "unchecked_solver_fallback"))
     # every step is accounted for by exactly one declared outcome, and the
     # first-action tally in the stats matches the number of diverted steps
-    exact = (n_cand + n_fa + n_ck + n_sup == n
+    exact = (n_cand + n_fa + n_ck + n_adm + n_slv + n_sup == n
              and st2.get("n_first_action_fail", -1) == n_fa
-             and st2["n_reject"] == n_ck)
+             and st2["n_reject"] == n_ck + n_adm)
     check("4.6c every step is accounted for by exactly one declared outcome",
           exact,
           f"of {n} steps: {n_cand} candidate, {n_fa} diverted by the eta-free "
-          f"first-action condition, {n_ck} by command admissibility / acceptance, "
-          f"{n_sup} supervisor. A permissive eta cannot rescue the first-action "
-          f"condition by construction, which is why that share stays high.")
+          f"first-action condition, {n_ck} by the post-allocation decrease test, "
+          f"{n_adm} by the command-admissibility budget, {n_slv} by solver "
+          f"failure, {n_sup} supervisor. A permissive eta cannot rescue the "
+          f"first-action condition by construction, which is why that share stays "
+          f"high; note the decrease test rejects {n_ck}, since a candidate that "
+          f"already passed the tighter eta-free condition passes it too.")
 
     # (d) the candidate's slack must not be relabelled as the transmitted slack
     ok_sep = "slack_fb" in a and len(a["slack_fb"]) == len(a["slack_cmd"])

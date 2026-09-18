@@ -139,7 +139,22 @@ _tag(
 # hardware-matched deployed MPC (Sec 9)
 # --------------------------------------------------------------------------
 N_HORIZON_HW = 12
-_tag("N_HORIZON_HW", "CONFIRMED: N=12 on hardware, not the manuscript's 10")
+_tag("N_HORIZON_HW",
+     "DISPUTED: the build spec asserts N=12 (preview 1.2 s) while the manuscript "
+     "states N=10. Neither has been checked against the flight configuration "
+     "attached to the reported hardware logs, so this is NOT confirmed. It is used "
+     "as the default only because the build spec is the more specific source. Every "
+     "conclusion that depends on N must be reported at BOTH values; see "
+     "N_HORIZON_CANDIDATES and the Stage 8 horizon axis.")
+
+# The two candidate values of the deployed horizon. Results are reported at both so
+# that no conclusion rests on resolving a discrepancy we cannot currently resolve.
+N_HORIZON_MANUSCRIPT = 10
+N_HORIZON_CANDIDATES = (10, 12)
+_tag("N_HORIZON_MANUSCRIPT", "CONFIRMED: the manuscript's stated horizon is 10")
+_tag("N_HORIZON_CANDIDATES",
+     "SIM: both candidate horizons, swept so the horizon discrepancy is a reported "
+     "robustness axis rather than an unverified assumption")
 
 W_NOMINAL = np.array([30.0, 5.0, 0.1, 0.05, 0.1, 1.0])  # pos vel psi r u du
 W_FLOOR = np.array([5.0, 1.0, 0.01, 0.01, 0.01, 0.1])

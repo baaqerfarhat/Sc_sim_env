@@ -372,19 +372,42 @@ class CommandChain:
         return info["u_nominal_transmitted"].copy(), info
 
     def apply_hidden(self, info):
-        """Evaluator side only: hidden actuation faults acting on a chosen packet.
+        """Preview the hidden effect WITHOUT consuming the fault slot.
 
-        Separated from `trial` so that no controller-visible path can reach it.
-        Returns the actual pulse durations; the plant turns those into physical
-        force using the true (hidden) valve thrust and the true yaw.
+        Kept for tests that want to inspect the hidden effect without advancing.
+        Evaluators must call `realize` instead, so that preview and advance always
+        happen together in the same order on every path.
         """
         pulse_actual, skipped = self.fault.preview(info["pulse_command_s"])
         return pulse_actual, skipped
 
     def commit(self, info):
-        """Transmit: advance the fault counter and the allocator EWMA exactly once."""
-        self.fault.advance()
+        """Software commit: update the allocator EWMA once. Does NOT touch the fault.
+
+        The hidden fault schedule is deliberately NOT advanced here. The controller
+        commits its own allocator memory when it selects a packet, but the physical
+        fault slot belongs to the evaluator and is consumed in `realize`. Advancing it
+        here made the closed-loop policy path run the fault schedule one cycle ahead
+        of the shorthand used to generate training data: the policy path advanced
+        inside this call and only previewed afterwards, while the shorthand previewed
+        first. Identical commanded packets then fired in one path and skipped in the
+        other, so training and evaluation saw different physics.
+        """
         self.use_hist = update_use_hist(self.use_hist, info["_F_for_commit"])
+
+    def realize(self, info):
+        """Evaluator side only: resolve the hidden effect for the transmitted packet
+        and consume exactly one physical fault slot, in that order.
+
+        This is THE single physical execution contract. Both the closed-loop policy
+        path and the data-generation shorthand route through it, so a given commanded
+        packet at a given fault state always produces the same physical pulses.
+        """
+        pulse_actual, skipped = self.fault.preview(info["pulse_command_s"])
+        self.fault.advance()
+        info["pulse_actual_s"] = pulse_actual
+        info["fault_skip"] = skipped
+        return pulse_actual, skipped
 
     def __call__(self, u_star, psi):
         """Trial then immediately commit. This is the hardware behaviour: there was
@@ -394,10 +417,8 @@ class CommandChain:
         shorthand has no separate accept/reject step to interleave.
         """
         u_nominal, info = self.trial(u_star, psi)
-        pulse_actual, skipped = self.apply_hidden(info)
-        info["pulse_actual_s"] = pulse_actual
-        info["fault_skip"] = skipped
-        self.commit(info)
+        self.commit(info)          # software allocator memory
+        self.realize(info)         # hidden effect, then one fault slot
         return u_nominal, info
 
 

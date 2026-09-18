@@ -170,12 +170,19 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
     # "does a CHANGING context help?" comparison unreadable.
     tag = {"no_impact": "no_impact", "full": "full", "full_no_check": "full",
            "full_monitor": "full", "constant_context": "const"}[method]
-    mode = {"no_impact": "enforce", "full": "enforce", "full_no_check": "off",
+    mode = {"no_impact": "enforce", "full": "enforce", "full_no_check": "enforce",
             "full_monitor": "monitor", "constant_context": "enforce"}[method]
+    # Sec 4.2: M4 (`full_no_check`) must be a SINGLE-component ablation. It keeps the
+    # same checkpoint, eligibility/supervisor diversion, first-action condition,
+    # solver fallback and command-admissibility budget as M3, and disables ONLY the
+    # post-allocation decrease test. Previously it ran check_mode="off", which
+    # switched off three mechanisms at once, so the gap could not be attributed to the
+    # allocated-command check.
+    extra = ({"enforce_post_alloc": False} if method == "full_no_check" else {})
     return LearnedContextPolicy(
         f"{DATA}/model_{tag}_s{model_seed}.pt", check_mode=mode,
         P=cert["P"], K=cert["K"], lam=cert["lam"], eta=cert["eta"],
-        R=cert["R"], N=N)
+        R=cert["R"], N=N, **extra)
 
 
 # --------------------------------------------------------------------------
@@ -193,7 +200,9 @@ def episode_metrics(log, sc, tol):
     # "the mechanism does not exist", so those cells are NaN. BasePolicy pre-seeds the
     # stat keys, so presence of a key cannot be used to detect this.
     has_rec = bool(log.meta.get("has_recovery", False))
-    checking = log.meta.get("check_mode") == "enforce"
+    # the post-allocation decrease test is its own switch now, so read it directly
+    checking = bool(log.meta.get("enforce_post_alloc",
+                                 log.meta.get("check_mode") == "enforce"))
 
     m = {
         "rmse_pos": float(np.sqrt(np.mean(e_pos ** 2))),
@@ -216,28 +225,74 @@ def episode_metrics(log, sc, tol):
     }
 
     # ---- action source: which controller actually produced the transmitted action ----
+    # Sec 4.5: every transmitted command has exactly one source, so the shares must
+    # sum to one. `fallback_first_action` was previously counted in policy stats but
+    # omitted from this list, which left 24-41% of steps unaccounted for in the
+    # reported decomposition and made the first-action condition - the single largest
+    # rejection path - invisible.
+    ACTION_SOURCES = ("candidate", "fallback_first_action", "fallback_checked",
+                      "fallback_inadmissible", "fallback_solver_fail",
+                      "unchecked_solver_fallback", "supervisor", "fallback_only")
     src = list(a["action_src"]) if "action_src" in a else []
     if src:
-        for label in ("candidate", "fallback_checked", "fallback_solver_fail",
-                      "supervisor", "fallback_only", "unchecked_solver_fallback"):
-            m[f"frac_src_{label}"] = float(sum(1 for s in src if s == label) / len(src))
+        for label in ACTION_SOURCES:
+            m[f"frac_src_{label}"] = float(sum(1 for s in src if s == label)
+                                           / len(src))
+        total = sum(m[f"frac_src_{label}"] for label in ACTION_SOURCES)
+        m["action_src_sum"] = float(total)
+        unknown = sorted(set(src) - set(ACTION_SOURCES))
+        if unknown or abs(total - 1.0) > 1e-9:
+            raise AssertionError(
+                f"action-source decomposition is incomplete: sum={total:.6f}, "
+                f"unlabelled sources={unknown}. Every step must be attributable to "
+                f"exactly one declared source.")
 
     # ---- Sec 8.1/8.2 task success against DECLARED thresholds ----
     # Both position and yaw must hold inside tolerance for the full dwell before the
     # deadline. This is a fixed specification, identical for every method, and it is
     # evaluated on every episode including healthy ones.
+    # `inside_task` is proximity to the CURRENT scoring reference. It is retained as a
+    # tracking-quality signal, but it is NOT task completion: a dwell at an
+    # intermediate waypoint, possibly before fault onset, satisfies it.
     inside_task = (e_pos <= TASK_TOL_POS) & (e_yaw <= TASK_TOL_YAW)
-    m["task_success"], m["completion_time"] = False, np.nan
+    m["frac_time_in_tol"] = float(inside_task.mean())
+    m["dwell_any_waypoint"], m["dwell_any_time"] = False, np.nan
     limit = min(n, TASK_DEADLINE_STEPS) - TASK_DWELL_STEPS + 1
     for t in range(max(limit, 0)):
         if inside_task[t:t + TASK_DWELL_STEPS].all():
-            m["task_success"] = True
-            m["completion_time"] = float((t + TASK_DWELL_STEPS) * C.TS)
+            m["dwell_any_waypoint"] = True
+            m["dwell_any_time"] = float((t + TASK_DWELL_STEPS) * C.TS)
             break
-    # Sec 8.2: a transient return is not sustained tracking, so record whether the
-    # trajectory was still inside tolerance at the end of the episode
-    m["task_held_at_end"] = bool(inside_task[-TASK_DWELL_STEPS:].all())
-    m["frac_time_in_tol"] = float(inside_task.mean())
+
+    # Sec 5.1: TASK COMPLETION is reaching the FINAL intended waypoint and heading and
+    # holding it for the dwell before the deadline. Scored against a fixed target, so
+    # it cannot be satisfied by sitting at an earlier waypoint.
+    tgt = log.meta.get("final_target")
+    tgt = None if tgt is None else np.asarray(tgt, dtype=float)
+    m["task_success"], m["completion_time"] = False, np.nan
+    m["task_final_defined"] = tgt is not None
+    if tgt is not None:
+        ef_pos = np.linalg.norm(xt[:, :2] - np.asarray(tgt)[None, :2], axis=1)
+        ef_yaw = np.abs(np.arctan2(np.sin(xt[:, 4] - tgt[4]),
+                                   np.cos(xt[:, 4] - tgt[4])))
+        at_final = (ef_pos <= TASK_TOL_POS) & (ef_yaw <= TASK_TOL_YAW)
+        for t in range(max(limit, 0)):
+            if at_final[t:t + TASK_DWELL_STEPS].all():
+                m["task_success"] = True
+                m["completion_time"] = float((t + TASK_DWELL_STEPS) * C.TS)
+                break
+        # a transient touch is not completion, so also record the terminal condition
+        m["task_held_at_end"] = bool(at_final[-TASK_DWELL_STEPS:].all())
+        m["final_pos_err_to_target"] = float(ef_pos[-1])
+        m["frac_time_at_final"] = float(at_final.mean())
+    else:
+        # no terminal waypoint exists for this family (closed path); completion in the
+        # waypoint sense is undefined and must not be reported as a failure
+        m["task_success"] = None
+        m["task_held_at_end"] = None
+        m["final_pos_err_to_target"] = np.nan
+        m["frac_time_at_final"] = np.nan
+        at_final = None
 
     # ---- recovery, measured only when there is something to recover from ----
     onset = sc.onset_step if (sc.fault_active or sc.perception != "healthy") else None
@@ -249,22 +304,35 @@ def episode_metrics(log, sc, tol):
         # lets easy episodes inflate a recovery rate.
         m["was_in_tol_at_onset"] = bool(inside_task[onset])
         m["mode"] = "maintenance" if inside_task[onset] else "reacquisition"
+        # Sec 5.1: the recovery clock starts at ONSET and the qualifying dwell must lie
+        # entirely at or after onset, so a dwell achieved before the fault can never be
+        # credited as recovery from it. `tol` is the baseline-relative diagnostic
+        # tolerance (~0.66 m), deliberately distinct from the 0.15 m task tolerance;
+        # the two are never merged into one column.
         inside = e_pos <= tol
         for t in range(onset, n - HOLD_STEPS + 1):
             if inside[t:t + HOLD_STEPS].all():
                 m["success"] = True
                 m["recovery_time"] = float((t - onset) * C.TS)
                 break
+        # Sec 5.1 "reacquisition": an excursion OUT of tolerance actually occurred
+        # after onset and the vehicle then came back. Maintenance never left.
+        left_after_onset = bool((~inside[onset:]).any())
+        m["excursion_after_onset"] = left_after_onset
+        m["reacquired"] = bool(m["success"] and left_after_onset)
+        m["maintained"] = bool(m["success"] and not left_after_onset)
         # post-onset window is FIXED relative to onset and identical across methods
         m["post_onset_rmse"] = float(np.sqrt(np.mean(e_pos[onset:] ** 2)))
         m["post_onset_peak"] = float(e_pos[onset:].max())
         m["post_onset_rmse_yaw"] = float(np.sqrt(np.mean(e_yaw[onset:] ** 2)))
-        # time from onset to the START of a qualifying dwell under the TASK spec
+        # time from onset to the START of a qualifying dwell at the FINAL target under
+        # the task spec; undefined for families with no terminal waypoint
         m["time_to_task_tol"] = np.nan
-        for t in range(onset, n - TASK_DWELL_STEPS + 1):
-            if inside_task[t:t + TASK_DWELL_STEPS].all():
-                m["time_to_task_tol"] = float((t - onset) * C.TS)
-                break
+        if at_final is not None:
+            for t in range(onset, n - TASK_DWELL_STEPS + 1):
+                if at_final[t:t + TASK_DWELL_STEPS].all():
+                    m["time_to_task_tol"] = float((t - onset) * C.TS)
+                    break
     else:
         m["was_in_tol_at_onset"] = bool(inside_task[0])
         m["mode"] = "healthy"
@@ -272,6 +340,9 @@ def episode_metrics(log, sc, tol):
         m["post_onset_peak"] = m["peak_pos"]
         m["post_onset_rmse_yaw"] = m["rmse_yaw"]
         m["time_to_task_tol"] = m["completion_time"]
+        m["excursion_after_onset"] = None
+        m["reacquired"] = None
+        m["maintained"] = None
 
     # eligibility interval durations, for the separate duration statistics
     g = np.asarray(a["gate"], dtype=int)
@@ -607,8 +678,13 @@ def report(out, rows, tol):
             rej = agg([r["frac_reject"] for r in sub])
             # task success counts EVERY episode in the denominator, including
             # failures and non-completions
-            n_task = sum(1 for r in sub if r["task_success"])
-            task_rate = n_task / len(sub)
+            # Sec 5.1: completion is scored at the FINAL waypoint. Families with no
+            # terminal waypoint report None, and those episodes are excluded from the
+            # denominator rather than counted as failures.
+            defined = [r for r in sub if r["task_success"] is not None]
+            n_task = sum(1 for r in defined if r["task_success"])
+            task_rate = (n_task / len(defined)) if defined else float("nan")
+            n_dwell_any = sum(1 for r in sub if r.get("dwell_any_waypoint"))
             n_draws = len({(r["condition"], r["ep_seed"]) for r in sub})
             sup = agg([r.get("frac_src_supervisor", np.nan) for r in sub])
             reac = [r for r in att if r.get("mode") == "reacquisition"]
@@ -621,9 +697,21 @@ def report(out, rows, tol):
                 "success_rate": srate,
                 "n_attempted": len(att), "n_success": ns, "recovery_time": tr,
                 "task_success_rate": task_rate, "n_task_success": n_task,
+                "n_task_defined": len(defined),
+                # tracking-quality signal: a dwell at ANY waypoint, which is what the
+                # earlier campaign mislabelled as task success
+                "n_dwell_any_waypoint": n_dwell_any,
+                "dwell_any_waypoint_rate": n_dwell_any / len(sub),
                 "n_episodes": len(sub), "n_distinct_draws": n_draws,
-                "task_held_at_end_rate": float(np.mean(
-                    [r["task_held_at_end"] for r in sub])),
+                "task_held_at_end_rate": (
+                    float(np.mean([r["task_held_at_end"] for r in defined]))
+                    if defined else float("nan")),
+                "n_reacquired": sum(1 for r in att if r.get("reacquired")),
+                "n_maintained": sum(1 for r in att if r.get("maintained")),
+                "n_excursion_after_onset": sum(
+                    1 for r in att if r.get("excursion_after_onset")),
+                "final_pos_err_to_target": agg(
+                    [r.get("final_pos_err_to_target", np.nan) for r in sub]),
                 "frac_time_in_tol": agg([r["frac_time_in_tol"] for r in sub]),
                 "completion_time": agg([r["completion_time"] for r in sub]),
                 "time_to_task_tol": agg([r["time_to_task_tol"] for r in sub]),
@@ -636,10 +724,16 @@ def report(out, rows, tol):
                     else float("nan")),
                 "frac_gate_on": act, "frac_reject": rej,
                 "frac_supervisor": sup,
-                "frac_src_candidate": agg(
-                    [r.get("frac_src_candidate", np.nan) for r in sub]),
-                "frac_src_fallback_checked": agg(
-                    [r.get("frac_src_fallback_checked", np.nan) for r in sub]),
+                # Sec 4.5: aggregate EVERY declared source, not a subset, so the
+                # reported decomposition sums to one without a derived residual.
+                **{f"frac_src_{lab}": agg([r.get(f"frac_src_{lab}", np.nan)
+                                           for r in sub])
+                   for lab in ("candidate", "fallback_first_action",
+                               "fallback_checked", "fallback_inadmissible",
+                               "fallback_solver_fail",
+                               "unchecked_solver_fallback", "supervisor")},
+                "action_src_sum": agg([r.get("action_src_sum", np.nan)
+                                       for r in sub]),
                 "accel_p95": agg([r["accel_p95"] for r in sub]),
                 "frac_fallback": agg([r["frac_fallback"] for r in sub]),
                 "post_onset_rmse": po,

@@ -220,6 +220,11 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
 
     def __init__(self, checkpoint, post_alloc_check=True, recovery=True,
                  P=None, K=None, lam=0.99, eta=0.05, R=None, check_mode=None, **kw):
+        # Sec 4.2: the safeguards are INDEPENDENT switches so an ablation can disable
+        # exactly one. Popped before super() because they are not base-class kwargs.
+        _enf_elig = bool(kw.pop("enforce_eligibility", True))
+        _enf_first = bool(kw.pop("enforce_first_action", True))
+        _enf_post = kw.pop("enforce_post_alloc", None)
         kw.setdefault("huber", True)
         super().__init__(**kw)
         self.load(checkpoint)
@@ -232,6 +237,19 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         assert check_mode in ("enforce", "monitor", "off")
         self.check_mode = check_mode
         self.post_alloc_check = (check_mode == "enforce")
+        # Driving every safeguard from `check_mode` meant check_mode="off" silently
+        # disabled eligibility/supervisor diversion and the first-action condition as
+        # well as the post-allocation test, so the M3-M4 gap was a combined-safeguard
+        # effect that could not be attributed to the allocated-command check. These
+        # default to `check_mode` semantics; the single-component ablation overrides
+        # `enforce_post_alloc` alone.
+        self.enforce_eligibility = _enf_elig
+        self.enforce_first_action = _enf_first
+        self.enforce_post_alloc = bool(check_mode == "enforce"
+                                       if _enf_post is None else _enf_post)
+        # solver failure / deadline miss always falls back: liveness, not an ablatable
+        # safeguard
+        self.enforce_solver_fallback = True
         self.recovery = bool(recovery)
         self.P = None if P is None else np.asarray(P, dtype=float)
         self.K = None if K is None else np.asarray(K, dtype=float)
@@ -298,7 +316,8 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         # the machinery is not yet diverting the action, otherwise the thresholds
         # depend on themselves and the calibration measures the supervisor rather
         # than the candidate it is supposed to characterise.
-        if self.recovery and not eligible and self.check_mode == "enforce":
+        if (self.recovery and not eligible and self.enforce_eligibility
+                and self.check_mode != "monitor"):
             u_sup = self._supervisor(x_hat, chain)
             _, chosen = chain.trial(u_sup, x_hat[4])
             chosen["_u_prop"] = u_sup
@@ -335,7 +354,8 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                     first_ok = bool(lhs <= rhs)
                     self.stats["n_first_action_fail"] += int(not first_ok)
 
-                if not first_ok and self.check_mode == "enforce":
+                if (not first_ok and self.enforce_first_action
+                        and self.check_mode != "monitor"):
                     # no timely FEASIBLE candidate exists, so the stored passing
                     # fallback is transmitted
                     chosen, accepted, src = fb_info, False, "fallback_first_action"
@@ -343,16 +363,32 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                     _, cand = chain.trial(u_star, x_hat[4])
                     cand["_u_prop"] = u_star
                     cand["_first_action_ok"] = first_ok
-                    if self.check_mode != "off" and fb_info is not None:
+                    if fb_info is not None:
+                        # The decrease test is ALWAYS evaluated so its slack and
+                        # verdict are logged on every arm; only enforcement is
+                        # ablatable. Command admissibility is a hard input-budget
+                        # constraint and stays enforced on both arms, so this ablation
+                        # is precisely "the post-allocation decrease test is disabled"
+                        # and not "several safeguards are disabled together".
                         u_cand_tx = cand["u_nominal_transmitted"]
-                        ok, slack = self._check(e_k, u_cand_tx, u_r, d_r,
-                                                r_now, r_next)
-                        ok = bool(ok and self._admissible(u_cand_tx, chain))
-                        if ok or self.check_mode == "monitor":
-                            # monitor records the slack and the would-be verdict but
-                            # transmits the candidate regardless
+                        ok_dec, slack = self._check(e_k, u_cand_tx, u_r, d_r,
+                                                    r_now, r_next)
+                        ok_adm = self._admissible(u_cand_tx, chain)
+                        cand["_ok_decrease"] = bool(ok_dec)
+                        cand["_ok_admissible"] = bool(ok_adm)
+                        ok = bool(ok_dec and ok_adm)
+                        act_on_decrease = (self.enforce_post_alloc
+                                           and self.check_mode != "monitor")
+                        if not ok_adm:
+                            # never transmit a command outside the declared budget
+                            self.stats["n_reject"] += 1
+                            chosen, accepted, src = (fb_info, False,
+                                                     "fallback_inadmissible")
+                        elif ok_dec or not act_on_decrease:
+                            # monitor and the M4 ablation record the would-be verdict
+                            # and transmit the candidate regardless
                             chosen, accepted = cand, bool(ok)
-                            if not ok:
+                            if not ok_dec:
                                 self.stats["n_would_reject"] += 1
                         else:
                             self.stats["n_reject"] += 1
