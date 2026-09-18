@@ -42,9 +42,12 @@ STAGES = {
         "35 min"),
     8: ("stage8_horizon.py", "horizon axis, OOD stress, model-level metrics", "13 min"),
     9: ("stage9_figures.py", "figures", "1 min"),
-    91: ("stage9_writeup.py", "results.md", "instant"),
+    91: ("stage9_writeup.py", "results.md + README findings block", "instant"),
+    92: ("stage9_response.py",
+         "response_to_retention_plan.md (point-by-point reply to the review)",
+         "instant"),
 }
-ORDER = [0, 1, 2, 3, 5, 6, 7, 8, 9, 91]
+ORDER = [0, 1, 2, 3, 5, 6, 7, 8, 9, 91, 92]
 
 # Gates: a failure invalidates everything after it.
 #

@@ -19,7 +19,7 @@ Superseded: v1 (results_v1_archive): defective information boundary, plant rotat
 | Provenance | Value |
 |---|---|
 | Run id | `v3-contract-and-ablation` |
-| Code commit | `24a42ac7bae950d888c9ce961432cd02638fbe15` |
+| Code commit | `a9ca11720b297cdf892625897b976fe744693ca4` (working tree DIRTY) |
 | Config manifest hash (at report time) | `07f277768a04859a` |
 | Python | 3.10.12 |
 

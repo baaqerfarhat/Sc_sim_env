@@ -1,10 +1,10 @@
 {
  "run_id": "v3-contract-and-ablation",
  "config_manifest_hash": "07f277768a04859a",
- "git_commit": "24a42ac7bae950d888c9ce961432cd02638fbe15",
- "git_dirty": false,
+ "git_commit": "a9ca11720b297cdf892625897b976fe744693ca4",
+ "git_dirty": true,
  "python": "3.10.12",
- "started_utc": "2026-09-18T19:53:38Z",
+ "started_utc": "2026-09-18T20:30:32Z",
  "supersedes": "v1 (results_v1_archive): defective information boundary, plant rotation and fallback selection. v2 (run id v2-corrected): fixed those, but applied the hidden fault one cycle early in the closed-loop path, bundled three safeguards into the M4 ablation, and scored task completion at the current rather than the final waypoint. Neither is comparable with these numbers.",
  "changes_vs_previous": [
   "single physical execution contract: commit() is software-only, realize() previews then consumes exactly one fault slot, on every path",
