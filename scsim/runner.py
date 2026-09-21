@@ -45,6 +45,8 @@ class EpisodeLog:
     use_hist: list = field(default_factory=list)
     accel: list = field(default_factory=list)
     solve_ms: list = field(default_factory=list)
+    decision_ms: list = field(default_factory=list)
+    deadline_miss: list = field(default_factory=list)
     fallback: list = field(default_factory=list)
     fault_skip: list = field(default_factory=list)
     pose_valid: list = field(default_factory=list)
@@ -271,7 +273,13 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
         if record:
             log.x_true.append(x.copy())
             log.x_hat.append(x_hat.copy())
-            log.ref.append(ref_prev[1].copy())
+            # Sec S0.3: r_now and the COMMITTED successor are different quantities and
+            # must be stored as such. Both fields previously received ref_prev[1], so
+            # the "current" reference was actually the successor and any analysis
+            # differencing the two saw an identically zero reference increment. Only
+            # `ref_score` feeds the reported metrics, so this corrects the model and
+            # bookkeeping channels without moving any scored quantity.
+            log.ref.append(ref_prev[0].copy())
             log.ref_score.append(ref_gen.scoring_reference(k).copy())
             log.ref_next.append(r_committed_next)
             log.u_prop.append(np.asarray(out["u_prop"], dtype=float).copy())
@@ -283,6 +291,9 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
             log.use_hist.append(chain.use_hist.copy())
             log.accel.append(a_mag)
             log.solve_ms.append(out.get("solve_ms", np.nan))
+            # Sec 12: complete decision latency and deadline outcome
+            log.decision_ms.append(float(out.get("decision_ms", np.nan)))
+            log.deadline_miss.append(bool(out.get("deadline_miss", False)))
             log.fallback.append(bool(out.get("fallback", False)))
             log.fault_skip.append(bool(out["fault_skip"]))
             log.pose_valid.append(bool(obs.get("valid", True)))

@@ -46,11 +46,14 @@ METHOD_LABEL = {
     "full_no_check": "M4  M3, no post-alloc check",
     "fallback_only": "M5  checked fallback only",
     "adaptive_mpc": "M6  adaptive MPC",
+    "no_alloc_aware": "M7  no alloc-aware selection",
+    "strict_first_action": r"M8  strict Eq. (15), no $\eta$",
 }
 MC = {"zero_context": "#7f7f7f", "nominal_recovery": "#2ca02c",
       "constant_context": "#9467bd", "adaptive_mpc": "#8c564b",
       "no_impact": "#1f77b4", "full": "#d62728",
-      "full_no_check": "#ff9896", "fallback_only": "#17becf"}
+      "full_no_check": "#ff9896", "fallback_only": "#17becf",
+      "no_alloc_aware": "#e377c2", "strict_first_action": "#bcbd22"}
 COND_LABEL = {"healthy": "healthy", "actuator": "actuation fault",
               "perception": "perception degr.", "combined": "combined"}
 

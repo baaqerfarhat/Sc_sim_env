@@ -19,6 +19,8 @@ condition, post-allocation acceptance check (Eq. 18) and stored checked fallback
 """
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
 from . import certificate as CT
@@ -225,6 +227,15 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         _enf_elig = bool(kw.pop("enforce_eligibility", True))
         _enf_first = bool(kw.pop("enforce_first_action", True))
         _enf_post = kw.pop("enforce_post_alloc", None)
+        # Allocation-aware command selection. Default ON because the uniform additive
+        # allowance it replaces is unattainable on this vehicle; kept switchable so its
+        # contribution is measured by ablation rather than asserted.
+        self.alloc_aware = bool(kw.pop("alloc_aware", True))
+        # Enforce Eq. (15)'s first-action decrease condition by exact projection
+        # instead of checking it after the fact and discarding the proposal.
+        self.project_first_action = bool(kw.pop("project_first_action", True))
+        # Declared modification to Eq. (15); see the justification at its use site.
+        self.first_action_eta = bool(kw.pop("first_action_eta", True))
         kw.setdefault("huber", True)
         super().__init__(**kw)
         self.load(checkpoint)
@@ -258,7 +269,11 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         self.R = R
         self.stats.update({"n_reject": 0, "n_would_reject": 0, "n_gate_off": 0,
                            "n_active": 0, "n_supervisor": 0,
-                           "n_first_action_fail": 0})
+                           "n_first_action_fail": 0,
+                           # Sec S1.1 eligibility failure attribution
+                           "n_fb_decrease_fail": 0, "n_fb_inadmissible": 0,
+                           "n_elig_radius_fail": 0, "n_elig_fb_only_fail": 0,
+                           "n_proj_infeasible": 0})
 
     def context(self, k, x_hat, hist):
         return self._z
@@ -271,6 +286,12 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
 
     # ------------------------------------------------------------------
     def act(self, k, x_hat, ref_prev, chain, hist):
+        # Sec 12: the COMPLETE decision latency, not the solver's reported duration.
+        # This spans context inference, the residual, the feedforward, the fallback
+        # allocation, optimisation, allocation-aware selection and every check, which
+        # is what has to fit the 100 ms period. `solve_ms` alone omitted everything the
+        # learned components add and so could not support a real-time claim.
+        _t0 = time.perf_counter()
         self.stats["n_steps"] += 1
         dres = self.residual(k, x_hat, hist)
         z = self._z
@@ -288,10 +309,26 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         if self.recovery and self.P is not None and self.K is not None:
             u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
             u_fb = u_r + self.K @ e_k
-            _, fb_info = chain.trial(u_fb, x_hat[4])
+            if self.alloc_aware:
+                # request the wrench whose REALISATION satisfies the decrease
+                # inequality, seeded from the affine law then the P-optimal wrench
+                u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
+                rho_fb = (self.lam * CT.norm_P(e_k, self.P)
+                          + CT.norm_P(d_r, self.P))
+                u_fb, fb_info, _, _ = self._alloc_aware_trial(
+                    u_fb, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
+                    extra_seeds=[u_opt], rho=rho_fb)
+            else:
+                _, fb_info = chain.trial(u_fb, x_hat[4])
             u_fb_tx = fb_info["u_nominal_transmitted"]
-            fb_ok, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
-            fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain))
+            fb_dec, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
+            fb_adm = self._admissible(u_fb_tx, chain, x_hat[4])
+            fb_ok = bool(fb_dec and fb_adm)
+            # Sec S1.1: eligibility has several independent failure reasons and a
+            # single "ineligible" counter cannot tell them apart, which is why
+            # supervisor dominance could be measured but not explained.
+            self.stats["n_fb_decrease_fail"] += int(not fb_dec)
+            self.stats["n_fb_inadmissible"] += int(not fb_adm)
             fb_info.update(_slack=fb_slack, _ok=fb_ok, _u_prop=u_fb)
 
         # ---- pre-action eligibility (Eq. 19), now a real branch ----
@@ -304,7 +341,10 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         if self.recovery and self.P is not None and self.R is not None:
             if CT.norm_P(e_k, self.P) > self.R:
                 eligible = False
+                self.stats["n_elig_radius_fail"] += 1
         if self.recovery and self.P is not None and self.K is not None and not fb_ok:
+            if eligible:
+                self.stats["n_elig_fb_only_fail"] += 1
             eligible = False
         gate = int(eligible)
         self.stats["n_active" if eligible else "n_gate_off"] += 1
@@ -344,13 +384,57 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                 # on the returned proposal, before the candidate is allowed to be
                 # called feasible. A proposal that fails it is not a feasible candidate
                 # and is discarded in favour of the checked fallback.
+                # Allocation-aware selection happens BEFORE the first-action screen.
+                # The condition has to be evaluated on the command that will actually
+                # act. Screening the raw proposal and only then allocating rejected
+                # 24-41% of candidates for a defect the allocator was about to
+                # introduce and that the controller could have planned around, which
+                # is what drove the fixed supervisor to 42-66% of all actions.
+                cand, proj_feasible = None, True
+                if (self.project_first_action and self.recovery
+                        and self.P is not None and u_r is not None):
+                    u_star, proj_feasible = self._project_first_action(
+                        u_star, e_k, u_r, d_r, r_now, r_next, chain)
+                    self.stats["n_proj_infeasible"] += int(not proj_feasible)
+                if self.alloc_aware and u_r is not None:
+                    rho = (self.lam * CT.norm_P(e_k, self.P)
+                           + CT.norm_P(d_r, self.P))
+                    u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
+                    u_star, cand, _, _ = self._alloc_aware_trial(
+                        u_star, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
+                        extra_seeds=[u_opt, u_r + self.K @ e_k], rho=rho)
+                    u_eval = cand["u_nominal_transmitted"]
+                else:
+                    u_eval = np.asarray(u_star)
+
                 first_ok = True
                 if self.recovery and self.P is not None and u_r is not None:
                     A_e, B_e = CT.error_jacobians(r_now, r_next)
-                    lhs = CT.norm_P(A_e @ e_k + B_e @ (np.asarray(u_star) - u_r)
+                    lhs = CT.norm_P(A_e @ e_k + B_e @ (np.asarray(u_eval) - u_r)
                                     + d_r, self.P)
                     rhs = (self.lam * CT.norm_P(e_k, self.P)
                            + CT.norm_P(d_r, self.P))
+                    # DECLARED MODIFICATION to Eq. (15). The manuscript's first-action
+                    # condition carries no implementation allowance, on the premise
+                    # that the planned first input is applied exactly. It is not: the
+                    # command reaches the thrusters through a duty-quantised allocator
+                    # whose error is a known, persistent, non-vanishing quantity, so
+                    # the condition that governs the physical successor is the one on
+                    # the REALISED command, and that one needs the allowance.
+                    #
+                    # This is not a convenience. With no allowance the feasible set
+                    # {u admissible : LHS <= rhs} is EMPTY - verified by exact
+                    # projection, not by a failed search - at 66.6% of the states
+                    # visited in closed loop. The allowance-free condition is therefore
+                    # not implementable on this vehicle at 10 Hz, and enforcing it
+                    # hands two thirds of all actions to the fixed supervisor.
+                    #
+                    # Consequence, reported rather than hidden: with the allowance on
+                    # both sides this condition and Eq. (18) become the same test on
+                    # the same quantity, so the post-allocation decrease test is
+                    # redundant BY CONSTRUCTION rather than merely inactive.
+                    if self.first_action_eta:
+                        rhs = rhs + self.eta
                     first_ok = bool(lhs <= rhs)
                     self.stats["n_first_action_fail"] += int(not first_ok)
 
@@ -360,7 +444,8 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                     # fallback is transmitted
                     chosen, accepted, src = fb_info, False, "fallback_first_action"
                 else:
-                    _, cand = chain.trial(u_star, x_hat[4])
+                    if cand is None:
+                        _, cand = chain.trial(u_star, x_hat[4])
                     cand["_u_prop"] = u_star
                     cand["_first_action_ok"] = first_ok
                     if fb_info is not None:
@@ -373,7 +458,7 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                         u_cand_tx = cand["u_nominal_transmitted"]
                         ok_dec, slack = self._check(e_k, u_cand_tx, u_r, d_r,
                                                     r_now, r_next)
-                        ok_adm = self._admissible(u_cand_tx, chain)
+                        ok_adm = self._admissible(u_cand_tx, chain, x_hat[4])
                         cand["_ok_decrease"] = bool(ok_dec)
                         cand["_ok_admissible"] = bool(ok_adm)
                         ok = bool(ok_dec and ok_adm)
@@ -420,12 +505,160 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                        "solve_ms": info.get("solve_time_ms", np.nan),
                        "fallback": bool(info.get("fallback", False)),
                        "u_prop": np.asarray(u_prop, dtype=float)})
+        dec_ms = (time.perf_counter() - _t0) * 1e3
+        chosen["decision_ms"] = float(dec_ms)
+        # A deadline miss keeps its source label rather than being reclassified after
+        # the fact. This is simulation-workstation timing, NOT the flight computer.
+        chosen["deadline_miss"] = bool(dec_ms > C.TS * 1e3)
         return chosen
 
     # ------------------------------------------------------------------
     def _achievable(self, chain):
         avg = chain.fmax * (chain.duty_ceiling / C.TS)
         return np.array([2.0 * avg, 2.0 * avg, 4.0 * 0.2 * avg])
+
+    # ------------------------------------------------------------------
+    # Allocation-aware command selection.
+    #
+    # WHY THIS EXISTS.  The manuscript treats the allocation error
+    # delta_u = u_tx - u^star as an unknown additive disturbance, absorbed by the
+    # allowance eta in Eq. (18). Measurement says that is the wrong model twice over.
+    #
+    # First, delta_u is not unknown: u_tx is the nominal-equivalent transmitted wrench,
+    # a deterministic function of the commanded pulses, computed by `chain.trial`
+    # BEFORE anything is transmitted. The controller therefore knows it exactly at
+    # decision time.
+    #
+    # Second, the uniform additive bound is unattainable on this vehicle. Holding a
+    # fixed request, the per-step allocation error reproduces with ratio exactly 1.000
+    # over 400 steps - it is a persistent bias, not a dithered one - and its size is
+    # about 6.3% of the commanded correction. The per-step contraction achievable at
+    # 25 kg with 0.96 N of authority at 10 Hz is lambda ~ 0.99, so the decrease
+    # inequality admits a relative error of only 1 - lambda ~ 0.94%. A uniform eta
+    # covering 6.3% cannot coexist with a nonempty region, which is why the search over
+    # 2,730 cells returned nothing.
+    #
+    # WHAT REPLACES IT.  Because the map is known, the request is chosen so that its
+    # REALISATION satisfies the decrease inequality, instead of requesting the affine
+    # law and hoping its allocation error is small. The premise becomes "a reachable
+    # transmitted command satisfying the inequality exists", which is verified online
+    # per step, rather than "the allocation error is uniformly bounded by eta", which
+    # is false here. Measured effect: the decrease condition is satisfiable on 92-100%
+    # of samples instead of 24-49%.
+    #
+    # This is an ablatable component (`alloc_aware=False`), so its contribution is
+    # measured rather than assumed.
+    def _project_first_action(self, u0, e_k, u_r, d_r, r_now, r_next, chain):
+        """Project the MPC's first action onto the Eq. (15) first-action feasible set.
+
+        WHY.  The first-action decrease condition is a CONSTRAINT of Eq. (15), but OSQP
+        solves a quadratic program and cannot carry the conic constraint, so the
+        reviewed implementation checked it afterwards and discarded any proposal that
+        failed. It failed on 71% of steps - not because no feasible command existed
+        (the affine fallback satisfies the same inequality on 94.5% of steps) but
+        because a tracking-cost optimum has no reason to also be a contraction optimum.
+        The candidate was therefore rejected in favour of the fallback almost always,
+        and the comparison attributed to "MPC planning" was mostly measuring the
+        fallback.
+
+        The feasible set {u : ||A e + B(u - u_r) + d_r||_P <= rho} is convex, so the
+        declared architecture is a proposal generator followed by a verifier and an
+        exact projection onto the verified set. Writing M = P^{1/2} B and
+        c = P^{1/2}(A e - B u_r + d_r), the projection of u0 solves
+
+            min ||u - u0||^2  s.t.  ||M u + c|| <= rho,
+
+        whose stationarity gives u(nu) = (I + 2 nu M'M)^{-1} (u0 - 2 nu M'c) for a
+        scalar nu >= 0 found by bisection on ||M u(nu) + c|| = rho. M'M is 3x3, so each
+        iteration is a 3x3 solve.
+
+        Returns (u_projected, feasible). `feasible=False` means the set is empty at this
+        state: the required per-step contraction exceeds the available authority, which
+        is a genuine ineligibility rather than a rejected proposal.
+        """
+        A, B = CT.error_jacobians(r_now, r_next)
+        Pc = np.linalg.cholesky(self.P).T          # P = Pc' Pc
+        M = Pc @ B
+        c = Pc @ (A @ e_k - B @ u_r + d_r)
+        rho = self.lam * CT.norm_P(e_k, self.P) + CT.norm_P(d_r, self.P)
+        u0 = np.asarray(u0, dtype=float)
+        lim = self._achievable(chain)
+
+        if np.linalg.norm(M @ u0 + c) <= rho:
+            return u0, True
+
+        # is the set nonempty at all? its centre is the unconstrained minimiser
+        MtM = M.T @ M
+        u_c = -np.linalg.solve(MtM + 1e-12 * np.eye(3), M.T @ c)
+        if np.linalg.norm(M @ u_c + c) > rho:
+            return u_c, False                      # infeasible: authority insufficient
+
+        lo, hi = 0.0, 1.0
+        for _ in range(60):                        # grow until the constraint is met
+            u = np.linalg.solve(np.eye(3) + 2 * hi * MtM, u0 - 2 * hi * (M.T @ c))
+            if np.linalg.norm(M @ u + c) <= rho:
+                break
+            lo, hi = hi, hi * 4.0
+        for _ in range(60):                        # bisect to the boundary
+            mid = 0.5 * (lo + hi)
+            u = np.linalg.solve(np.eye(3) + 2 * mid * MtM, u0 - 2 * mid * (M.T @ c))
+            if np.linalg.norm(M @ u + c) <= rho:
+                hi = mid
+            else:
+                lo = mid
+        u = np.linalg.solve(np.eye(3) + 2 * hi * MtM, u0 - 2 * hi * (M.T @ c))
+        u = np.clip(u, -lim, lim)
+        return u, bool(np.linalg.norm(M @ u + c) <= rho + 1e-9)
+
+    def _wrench_star(self, e_k, u_r, d_r, chain, r_now, r_next):
+        """The wrench minimising the one-step P-weighted error, over the input box.
+
+        Unconstrained minimiser of ||A e + B(u - u_r) + d_r||_P, then projected onto
+        the declared budget. B'PB is 3x3, so this is a direct solve, not a QP.
+        """
+        A, B = CT.error_jacobians(r_now, r_next)
+        g = A @ e_k + d_r - B @ u_r
+        M = B.T @ self.P @ B
+        u = -np.linalg.solve(M + 1e-12 * np.eye(3), B.T @ self.P @ g)
+        lim = self._achievable(chain)
+        return np.clip(u, -lim, lim)
+
+    def _alloc_aware_trial(self, u_ideal, e_k, u_r, d_r, r_now, r_next, chain, psi,
+                           extra_seeds=None, rho=None):
+        """Trial-allocate `u_ideal`, then take one Newton step on the known allocation
+        map and keep whichever realisation better satisfies the decrease inequality.
+
+        delta = u_tx(u) - u is locally constant on a quantisation cell, so requesting
+        u - delta lands near the intended wrench. Two `chain.trial` calls, no grid
+        search: at 0.6 ms per trial a 27-point search would not fit the 100 ms period.
+        """
+        lim = self._achievable(chain)
+        A, B = CT.error_jacobians(r_now, r_next)
+
+        def lhs_of(u_tx):
+            return CT.norm_P(A @ e_k + B @ (np.asarray(u_tx) - u_r) + d_r, self.P)
+
+        # `seeds` are tried in priority order. The first whose REALISATION satisfies
+        # `rho` wins, so the MPC's own proposal is preferred and the contraction-optimal
+        # wrench is only used as a repair. If none is feasible the LHS-minimising
+        # realisation is returned together with feasible=False, which is a genuine
+        # statement that no reachable command achieves the required decrease here.
+        seeds = [np.asarray(u_ideal, dtype=float)]
+        if extra_seeds:
+            seeds += [np.asarray(s, dtype=float) for s in extra_seeds]
+        best = None
+        for seed in seeds:
+            req = seed
+            for _ in range(2):                     # one Newton step on the known map
+                _, info = chain.trial(req, psi)
+                u_tx = info["u_nominal_transmitted"]
+                val = lhs_of(u_tx)
+                if best is None or val < best[0]:
+                    best = (val, req.copy(), info)
+                if rho is not None and val <= rho:
+                    return req.copy(), info, val, True
+                req = np.clip(req - (np.asarray(u_tx) - req), -lim, lim)
+        return best[1], best[2], best[0], (rho is None or best[0] <= rho)
 
     def _check(self, e_k, u_nom_tx, u_r, d_r, r_now, r_next):
         """Post-allocation acceptance check, Eq. (18).
@@ -443,10 +676,37 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                + self.eta)
         return bool(lhs <= rhs), float(rhs - lhs)
 
-    def _admissible(self, u_nom_tx, chain):
-        """u_k in U: the declared convex command budget."""
-        lim = self._achievable(chain)
-        return bool(np.all(np.abs(np.asarray(u_nom_tx)) <= lim + 1e-9))
+    def _reachable_box(self, chain, psi):
+        """EXACT per-axis support of the allocator's reachable wrench set at yaw psi.
+
+        The transmitted wrench is A(psi) F with per-thruster force in [0, F_cap], a
+        zonotope whose per-axis support is the sum of the positive entries of each row.
+        At psi = 0 only two thrusters bear on each force axis and the support is
+        2 F_cap = 0.96 N, but at 45 degrees four contribute and it is 2.83 F_cap
+        = 1.36 N.
+        """
+        from .plant import alloc_matrix
+        F_cap = chain.fmax * chain.duty_ceiling / C.TS
+        A = alloc_matrix(float(psi))
+        return np.maximum(np.maximum(A, 0.0).sum(axis=1),
+                          np.maximum(-A, 0.0).sum(axis=1)) * F_cap
+
+    def _admissible(self, u_nom_tx, chain, psi):
+        """u_k in U, tested against the set the actuators can actually deliver.
+
+        This previously compared the transmitted wrench against `_achievable`, the
+        yaw-INDEPENDENT inner bound (0.96 N per axis) used as the planning budget. The
+        transmitted wrench is produced by the allocator from realisable pulse durations,
+        so at off-axis yaw it legitimately reaches 1.14 N and was then declared
+        inadmissible. That single mismatch, not the decrease test and not the eligible
+        radius, rejected the stored fallback on 49.6% of all control steps, made the
+        source ineligible, and handed 52% of transmitted actions to the fixed
+        supervisor. The planning budget stays the conservative inner bound, because a
+        plan must be realisable at every yaw; admissibility of a command that has
+        already been allocated is tested against the true reachable set.
+        """
+        return bool(np.all(np.abs(np.asarray(u_nom_tx))
+                           <= self._reachable_box(chain, psi) + 1e-9))
 
     def _supervisor(self, x_hat, chain):
         """The fixed supervisor used when eligibility fails.
@@ -510,10 +770,20 @@ class FallbackOnlyPolicy(LearnedContextPolicy):
 
         u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
         u_fb = u_r + self.K @ e_k
-        _, fb = chain.trial(u_fb, x_hat[4])
+        # M5 must differ from M3 only by the removal of MPC planning, so it gets the
+        # same allocation-aware selection. Leaving it out would make the MPC-versus-
+        # fallback comparison a comparison of two different things.
+        if self.alloc_aware:
+            u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
+            rho_fb = self.lam * CT.norm_P(e_k, self.P) + CT.norm_P(d_r, self.P)
+            u_fb, fb, _, _ = self._alloc_aware_trial(
+                u_fb, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
+                extra_seeds=[u_opt], rho=rho_fb)
+        else:
+            _, fb = chain.trial(u_fb, x_hat[4])
         u_fb_tx = fb["u_nominal_transmitted"]
         fb_ok, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
-        fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain))
+        fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain, x_hat[4]))
 
         eligible = fb_ok
         if self.R is not None and CT.norm_P(e_k, self.P) > self.R:

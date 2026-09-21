@@ -1,16 +1,18 @@
 {
- "run_id": "v3-contract-and-ablation",
+ "run_id": "v4-architecture-repair",
  "config_manifest_hash": "07f277768a04859a",
- "git_commit": "a9ca11720b297cdf892625897b976fe744693ca4",
+ "git_commit": "81f52657c7d16d8377ac0812d13295410de377a7",
  "git_dirty": true,
  "python": "3.10.12",
  "started_utc": "2026-09-18T20:30:32Z",
  "supersedes": "v1 (results_v1_archive): defective information boundary, plant rotation and fallback selection. v2 (run id v2-corrected): fixed those, but applied the hidden fault one cycle early in the closed-loop path, bundled three safeguards into the M4 ablation, and scored task completion at the current rather than the final waypoint. Neither is comparable with these numbers.",
  "changes_vs_previous": [
-  "single physical execution contract: commit() is software-only, realize() previews then consumes exactly one fault slot, on every path",
-  "M4 is a single-component ablation: only the Eq. (18) post-allocation decrease test is disabled; eligibility, first-action, solver fallback and the command-admissibility budget remain enforced",
-  "all action sources logged and aggregated; shares sum to one",
-  "task completion scored at the FINAL waypoint and heading; recovery is onset-relative with maintenance and reacquisition separated",
-  "both candidate horizons (manuscript N=10, build spec N=12) swept and compared on matched draws"
+  "admissibility budget: exact yaw-dependent reachable set replaces the yaw-independent inner bound",
+  "allocation-aware command selection (M7 ablates it)",
+  "Eq.(15) enforced by exact projection, with the implementation allowance (M8 ablates it)",
+  "ordered recovery scoring; final-target task completion",
+  "reference logging: log.ref stores r_now, not the successor",
+  "complete decision latency and deadline misses",
+  "scoped station-keeping certificate track with a usefulness requirement"
  ]
 }

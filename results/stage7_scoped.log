@@ -1,0 +1,48 @@
+==============================================================================
+STAGE 7b  one narrow recovery case: verify, freeze, calibrate (Sec 11)
+==============================================================================
+
+C1 domain: held setpoint, heading band +/-0.0 rad, mass/inertia +/-2%, reference defect b_r = 0 by construction
+
+C2 design search (ranked by the budget that decides emptiness)
+   lam0       w     lam     b_r     R_U   R_max      |K|  budget for d_cert
+   0.96   1e+03  0.9997  0.0000   3.547   3.547    20.73           +0.00096
+   0.96   1e+04  0.9995  0.0000   3.664   3.664    22.09           +0.00169
+   0.96   1e+05  1.0019  0.0000   3.844   3.844    22.36           -0.00737
+   0.96   1e+06  0.9774  0.0000   2.596   2.596    21.49           +0.05869  <== best
+   0.97   1e+03  0.9969  0.0000   5.003   5.003    13.93           +0.01570
+   0.97   1e+04  0.9928  0.0000   4.718   4.718    15.60           +0.03398
+   0.97   1e+05  0.9949  0.0000   4.938   4.938    15.10           +0.02528
+   0.97   1e+06  0.9905  0.0000   4.432   4.432    16.66           +0.04208
+   0.98   1e+03  1.0099  0.0000  15.767   5.340     5.56           -0.05302
+   0.98   1e+04  1.0155  0.0000  24.397  23.802     4.06           -0.36966
+   0.98   1e+05  1.0135  0.0000  24.034  24.034     4.21           -0.32378
+   0.98   1e+06  1.0128  0.0000  25.528  25.528     3.95           -0.32669
+   0.98   1e+03  1.0133  0.0000  29.527   5.295     3.03           -0.07049
+   0.98   1e+04  1.0105  0.0000  34.602   7.018     2.55           -0.07399
+   0.98   1e+05  1.0148  0.0000  46.310  12.213     2.18           -0.18042
+   0.98   1e+06  1.0136  0.0000  38.265  21.027     2.64           -0.28637
+   0.99   1e+03  1.0086  0.0000  48.536   5.262     1.91           -0.04528
+   0.99   1e+04  1.0133  0.0000  59.010   5.262     1.63           -0.07016
+   0.99   1e+05  1.0133  0.0000  60.192   5.849     1.61           -0.07772
+   0.99   1e+06  1.0143  0.0000  77.118  10.171     1.31           -0.14535
+   0.99   1e+03  1.0032  0.0000  15.828   0.862     0.75           -0.00275
+   0.99   1e+04  1.0056  0.0000 111.783   1.697     0.50           -0.00954
+   0.99   1e+05  1.0095  0.0000 145.668   5.243     0.55           -0.04957
+   0.99   1e+06  1.0061  0.0000 146.505   5.243     0.68           -0.03174
+
+  frozen: lam=0.9774  R_max=2.596  admissible prediction budget d_cert < 0.05869
+
+C3 calibration under the FROZEN policy (80 calibration + 40 disjoint test episodes)
+  per-episode max mismatch: rank 79/80 at delta=0.025 -> d_cert = 0.00000
+  frozen budget 0.05869 -> within budget
+  NOT USEFUL: recovery-active coverage 0.0% on test (threshold 20%), 0 active calibration transitions. A region the vehicle does not enter is not a useful certificate, and a threshold fitted to zero active transitions is vacuous.
+  recovery-active coverage: calibration 0.0%, test 0.0%
+  VERDICT: NOT ACCEPTED
+
+C4 on 40 disjoint test episodes: 0/40 exceed the calibrated bound (nominal allowance 2.5%)
+  mean recovery-active fraction 0.0%
+  s_cert = nan  R_max = 2.5956  margin = +nan
+  position projection of the certified region: <= nan m
+
+wrote results/stage7_scoped.json  (1555s)

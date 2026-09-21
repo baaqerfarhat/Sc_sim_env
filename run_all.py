@@ -82,7 +82,7 @@ def run(stage):
 # identifier. v3 unified the fault-slot execution contract, made M4 a
 # single-component ablation, scored task completion at the final waypoint and swept
 # both candidate horizons. Its numbers must not be pooled with v2's.
-RUN_ID = "v3-contract-and-ablation"
+RUN_ID = "v4-architecture-repair"
 
 
 def write_run_identity():

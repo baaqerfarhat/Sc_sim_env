@@ -5,21 +5,23 @@ Fault-Tolerant Model Predictive Control*, targeting the two items the abstract
 lists as unvalidated: the behavioural-supervision gain and the numerical recovery
 certificate.
 
-**Run id `v3-contract-and-ablation`.** This campaign supersedes both earlier ones and their numbers
+**Run id `v4-architecture-repair`.** This campaign supersedes both earlier ones and their numbers
 must not be pooled with these. What changed since the previous run:
 
-- single physical execution contract: commit() is software-only, realize() previews then consumes exactly one fault slot, on every path
-- M4 is a single-component ablation: only the Eq. (18) post-allocation decrease test is disabled; eligibility, first-action, solver fallback and the command-admissibility budget remain enforced
-- all action sources logged and aggregated; shares sum to one
-- task completion scored at the FINAL waypoint and heading; recovery is onset-relative with maintenance and reacquisition separated
-- both candidate horizons (manuscript N=10, build spec N=12) swept and compared on matched draws
+- admissibility budget: exact yaw-dependent reachable set replaces the yaw-independent inner bound
+- allocation-aware command selection (M7 ablates it)
+- Eq.(15) enforced by exact projection, with the implementation allowance (M8 ablates it)
+- ordered recovery scoring; final-target task completion
+- reference logging: log.ref stores r_now, not the successor
+- complete decision latency and deadline misses
+- scoped station-keeping certificate track with a usefulness requirement
 
 Superseded: v1 (results_v1_archive): defective information boundary, plant rotation and fallback selection. v2 (run id v2-corrected): fixed those, but applied the hidden fault one cycle early in the closed-loop path, bundled three safeguards into the M4 ablation, and scored task completion at the current rather than the final waypoint. Neither is comparable with these numbers.
 
 | Provenance | Value |
 |---|---|
-| Run id | `v3-contract-and-ablation` |
-| Code commit | `a9ca11720b297cdf892625897b976fe744693ca4` (working tree DIRTY) |
+| Run id | `v4-architecture-repair` |
+| Code commit | `81f52657c7d16d8377ac0812d13295410de377a7` (working tree DIRTY) |
 | Config manifest hash (at report time) | `07f277768a04859a` |
 | Python | 3.10.12 |
 
@@ -73,7 +75,7 @@ and then paired as though matched, so signature distances mixed the impairment w
 initial condition. The probe signature regressed physical response against the *fault-reduced*
 wrench, which divides out the very impairment the signature exists to describe.
 
-**Semantic gate (Stage 0).** 18/18 checks pass. These run as a hard gate
+**Semantic gate (Stage 0).** 20/20 checks pass. These run as a hard gate
 ahead of every other stage, asserting that hidden fault information cannot reach the
 controller, that physical thrust follows true attitude, that the selection logic transmits
 what it claims to, and that the enclosures survive sampling.
@@ -96,9 +98,11 @@ Selected checks:
 | 3.4f allocator-only vs physical authority are distinguishable | PASS. same commanded pulses: dv = 0.00192 at nominal valve thrust vs 0.00640 at 4.0 N. A sweep changing only the allocator's fmax leaves the first number unchanged and must be labelled as such. |
 | 4.6a an unsatisfiable acceptance bar never transmits a candidate | PASS. action sources observed: ['supervisor']; rejects=0, first-action failures=0, supervisor=120 |
 | 4.6b a failing fallback yields ineligibility and the fixed supervisor | PASS. supervisor share 100%, eligible steps 0 of 120 (eligibility requires a PASSING fallback) |
-| 4.6c every step is accounted for by exactly one declared outcome | PASS. of 120 steps: 31 candidate, 78 diverted by the eta-free first-action condition, 0 by the post-allocation decrease test, 10 by the command-admissibility budget, 0 by solver failure, 1 supervisor. A permissive eta cannot rescue the first-action condition by construction, which is why that share stays high; note the decrease test rejects 0, since a candidate that already passed the tighter eta-free condition passes it too. |
+| 4.6c every step is accounted for by exactly one declared outcome | PASS. of 120 steps: 120 candidate, 0 diverted by the eta-free first-action condition, 0 by the post-allocation decrease test, 0 by the command-admissibility budget, 0 by solver failure, 0 supervisor. A permissive eta cannot rescue the first-action condition by construction, which is why that share stays high; note the decrease test rejects 0, since a candidate that already passed the tighter eta-free condition passes it too. |
 | 4.6d candidate and fallback slacks are recorded separately | PASS. slack_cmd (candidate) and slack_fb (fallback) are distinct log channels, so a candidate's slack cannot be read as the transmitted action's slack |
 | 4.6e one transmitted command advances the fault schedule once | PASS. 0 skips over 120 control steps with 2-3 trial allocations each; only the committed packet advances the schedule |
+| 5.1a ordered recovery scoring on the prescribed synthetic traces | PASS. 6 constructed traces (always inside; outside then return; leaves and never returns; leave then return; dwell-then-excursion; truncated window) agree with the declared ordering on every asserted field |
+| 5.1b a dwell before the excursion is not credited as reacquisition | PASS. a trace inside tolerance across onset for longer than the dwell and then permanently thrown out is recorded as mode=reacquisition, success=False, reason=no_qualifying_dwell_after_excursion. The reviewed scorer returned reacquired=True with recovery_time=0.0 on this trace, crediting a return before the departure it was recovering from. |
 | 6.1 interval enclosure not falsified by sampling | PASS. 6600 sampled points: worst (|dA| - E_A) = +0.000e+00, worst (|dB| - E_B) = +0.000e+00; both must be <= 0. Passing does NOT certify the continuum, only that no counterexample was found (step, span 0.05). |
 
 Passing 6.1 does **not** certify the continuum; it only records that no counterexample was
@@ -138,17 +142,17 @@ through the results:
 | Paper claim | Verdict | Evidence |
 |---|---|---|
 | Simulation reproduces the hardware envelopes | **supported** | 10/10 anchoring gates pass; accel p95 0.0543 m/s^2 inside the measured 0.025-0.063 band; Sec 1 |
-| **PRIMARY:** behavioural supervision helps (M3 vs M2) | **not supported; adverse** | costs +0.045 to +0.138 m post-onset RMSE, 4/4 conditions significantly WORSE at the episode level. The seed-crossed intervals include zero in 4/4, so at the population level the effect is unresolved - but every point estimate is adverse. The pre-declared lambda_I grid also selected **zero**; Sec 2 |
-| Inferring a *changing* context helps (M2 vs M1) | **supported** | -0.437 to -0.065 m, 4/4 conditions significant. This is the clean isolation: both sides carry no behavioural loss; Sec 3 |
-| The learned residual helps (M3 vs M0) | **partially supported** | -0.293 to -0.026 m, 2/4 conditions significant, with the same recovery structure on both sides; Sec 3 |
-| MPC planning adds value beyond the fallback (M3 vs M5) | **not supported** | -0.033 to +0.066 m; removing the optimiser entirely and keeping only the checked fallback changes little, and is significantly BETTER in 1/4 conditions. Much of the measured performance is the fallback and the eligibility logic, not MPC; Sec 3 |
+| **PRIMARY:** behavioural supervision helps (M3 vs M2) | **not supported; adverse** | costs +0.165 to +0.510 m post-onset RMSE, 4/4 conditions significantly WORSE at the episode level. The seed-crossed intervals include zero in 4/4, so at the population level the effect is unresolved - but every point estimate is adverse. The pre-declared lambda_I grid also selected **zero**; Sec 2 |
+| Inferring a *changing* context helps (M2 vs M1) | **supported** | -0.515 to -0.093 m, 4/4 conditions significant. This is the clean isolation: both sides carry no behavioural loss; Sec 3 |
+| The learned residual helps (M3 vs M0) | **partially supported** | +0.104 to +0.181 m, 0/4 conditions significant, with the same recovery structure on both sides; Sec 3 |
+| MPC planning adds value beyond the fallback (M3 vs M5) | **not supported** | +0.237 to +0.675 m; removing the optimiser entirely and keeping only the checked fallback changes little, and is significantly BETTER in 4/4 conditions. Much of the measured performance is the fallback and the eligibility logic, not MPC; Sec 3 |
 | The post-allocation decrease test of Eq. (18) is load-bearing (M3 vs M4) | **not supported; exactly zero** | now a true single-component ablation - identical checkpoint, eligibility, first-action condition, solver fallback and command budget, with only the decrease test disabled. The effect is **+0.00000 m in all 4/4 conditions**: the test *never rejects a candidate*. The eta-free first-action condition is strictly tighter and already screens out everything the decrease test would catch. The earlier large gap came from three safeguards being disabled together; Sec 3 |
-| Beats the hardware-matched comparator (M3 vs HW) | **condition-dependent** | -0.503 to +0.610 m: better under perception and combined faults, **worse** under healthy and actuator-only. The earlier campaign's uniform win did not survive closing the fault-information leak; Sec 3 |
-| Declared task specification is met | **not supported** | pos <= 0.15 m and yaw <= 5 deg held 2 s is reached in only 107/3840 rollouts overall; the best cell is `healthy|no_impact` at 11%. The **evaluated controllers rarely achieve it**; that is not evidence the specification is unattainable in principle. Completion is now scored at the **final** intended waypoint and heading, so an intermediate-waypoint dwell no longer counts; Sec 3 |
-| Conclusions do not depend on the disputed horizon (N=10 vs N=12) | **supported** | the manuscript states N=10, the build spec N=12, and neither was checked against the flight configuration, so both were run on matched draws. Largest paired difference -0.0138 m [-0.0730, +0.0491], not significant in 2/2 conditions and an order of magnitude below the effects being claimed; Sec 4.4 |
-| Learned residual transfers to an unseen reference family | **not supported; fails badly** | on the held-out `transfer` family the learned methods reach 4.8-5.1 m RMSE against 0.37-1.30 m for the *zero-context* comparator - roughly an order of magnitude worse. The residual is trained on `step`/`smooth` and does not generalise off them; Sec 2.4 |
-| Behavioural supervision helps on cross-reference transfer | **weak, and immaterial** | this is the one axis where M3 beats M2: significantly better in 2/2 held-out-family cells. But the gain is ~0.13-0.17 m on top of a ~5 m error, so it improves a regime in which the method has already failed; Sec 2.4 |
-| The evaluated policy is mostly the *proposed* controller | **no** | the fixed supervisor issues 42%-66% of all transmitted actions under M3, because pre-action eligibility requires a fallback that passes its own check and it usually does not. What the table scores is largely a fixed velocity-damping law, not context-conditioned MPC; Sec 3 |
+| Beats the hardware-matched comparator (M3 vs HW) | **condition-dependent** | -0.168 to +0.023 m: better under perception and combined faults, **worse** under healthy and actuator-only. The earlier campaign's uniform win did not survive closing the fault-information leak; Sec 3 |
+| Declared task specification is met | **not supported** | pos <= 0.15 m and yaw <= 5 deg held 2 s is reached in only 910/5280 rollouts overall; the best cell is `actuator|no_impact` at 59%. The **evaluated controllers rarely achieve it**; that is not evidence the specification is unattainable in principle. Completion is now scored at the **final** intended waypoint and heading, so an intermediate-waypoint dwell no longer counts; Sec 3 |
+| Conclusions do not depend on the disputed horizon (N=10 vs N=12) | **supported** | the manuscript states N=10, the build spec N=12, and neither was checked against the flight configuration, so both were run on matched draws. Largest paired difference +0.0709 m [-0.1917, +0.3537], not significant in 2/2 conditions and an order of magnitude below the effects being claimed; Sec 4.4 |
+| Learned residual transfers to an unseen reference family | **not supported; fails badly** | on the held-out `transfer` family the learned methods reach 0.4-1.0 m RMSE against 0.37-1.30 m for the *zero-context* comparator - roughly an order of magnitude worse. The residual is trained on `step`/`smooth` and does not generalise off them; Sec 2.4 |
+| Behavioural supervision helps on cross-reference transfer | **weak, and immaterial** | this is the one axis where M3 beats M2: significantly better in 0/2 held-out-family cells. But the gain is ~0.13-0.17 m on top of a ~5 m error, so it improves a regime in which the method has already failed; Sec 2.4 |
+| The evaluated policy is mostly the *proposed* controller | **no** | the fixed supervisor issues 1%-19% of all transmitted actions under M3, because pre-action eligibility requires a fallback that passes its own check and it usually does not. What the table scores is largely a fixed velocity-damping law, not context-conditioned MPC; Sec 3 |
 | Numerical recovery certificate | **not supported (empty)** | 0 of 2730 swept cells certify, now with a *sound* enclosure; boundary and binding terms located instead; Sec 4 |
 
 **Net position.** Two mechanisms survive the corrected campaign: the learned residual and
@@ -336,10 +340,10 @@ replicates). Negative = full is better.
 
 | Condition | dRMSE (m) | 95% CI | blocks | significant |
 |---|---|---|---|---|
-| healthy | +0.0517 | [+0.0117, +0.0922] | 60 | **yes** |
-| actuator | +0.0989 | [+0.0514, +0.1485] | 60 | **yes** |
-| perception | +0.0254 | [-0.0005, +0.0498] | 60 | no |
-| combined | +0.0431 | [+0.0125, +0.0751] | 60 | **yes** |
+| healthy | +0.1652 | [+0.1215, +0.2194] | 60 | **yes** |
+| actuator | +0.1699 | [+0.1279, +0.2259] | 60 | **yes** |
+| perception | +0.3231 | [+0.2194, +0.4270] | 60 | **yes** |
+| combined | +0.3810 | [+0.2756, +0.4953] | 60 | **yes** |
 
 ### 2.4 Out-of-distribution stress (the axis the loss targets)
 
@@ -353,32 +357,32 @@ never pooled with the calibrated population.
 | Stress | Condition | Method | RMSE (m) | peak (m) | recovery |
 |---|---|---|---|---|---|
 | mismatch | actuator | `zero_context` | 1.038 ± 0.124 | 2.00 | 40/40 |
-| mismatch | actuator | `constant_context` | 1.671 ± 0.282 | 2.10 | 17/40 |
-| mismatch | actuator | `no_impact` | 1.336 ± 0.235 | 2.00 | 73/120 |
-| mismatch | actuator | `full` | 1.426 ± 0.301 | 2.00 | 70/120 |
+| mismatch | actuator | `constant_context` | 0.877 ± 0.092 | 2.00 | 40/40 |
+| mismatch | actuator | `no_impact` | 0.795 ± 0.070 | 2.00 | 120/120 |
+| mismatch | actuator | `full` | 0.945 ± 0.248 | 2.00 | 119/120 |
 | mismatch | combined | `zero_context` | 1.478 ± 0.505 | 2.12 | 37/40 |
-| mismatch | combined | `constant_context` | 1.261 ± 0.213 | 2.00 | 30/40 |
-| mismatch | combined | `no_impact` | 1.221 ± 0.253 | 2.00 | 105/120 |
-| mismatch | combined | `full` | 1.242 ± 0.178 | 2.00 | 101/120 |
-| transfer_ref | actuator | `zero_context` | 0.373 ± 0.125 | 0.62 | 40/40 |
-| transfer_ref | actuator | `constant_context` | 4.846 ± 0.799 | 7.15 | 0/40 |
-| transfer_ref | actuator | `no_impact` | 5.057 ± 0.635 | 7.54 | 0/120 |
-| transfer_ref | actuator | `full` | 4.914 ± 0.730 | 7.26 | 0/120 |
-| transfer_ref | combined | `zero_context` | 1.303 ± 0.569 | 2.57 | 40/40 |
-| transfer_ref | combined | `constant_context` | 4.683 ± 1.040 | 6.99 | 0/40 |
-| transfer_ref | combined | `no_impact` | 4.920 ± 0.971 | 7.33 | 0/120 |
-| transfer_ref | combined | `full` | 4.756 ± 1.007 | 7.13 | 0/120 |
+| mismatch | combined | `constant_context` | 1.426 ± 0.547 | 2.05 | 37/40 |
+| mismatch | combined | `no_impact` | 1.143 ± 0.358 | 2.00 | 115/120 |
+| mismatch | combined | `full` | 1.567 ± 0.721 | 2.00 | 96/120 |
+| transfer_ref | actuator | `zero_context` | 0.373 ± 0.125 | 0.62 | 35/40 |
+| transfer_ref | actuator | `constant_context` | 0.352 ± 0.102 | 0.66 | 32/40 |
+| transfer_ref | actuator | `no_impact` | 0.375 ± 0.113 | 0.69 | 100/120 |
+| transfer_ref | actuator | `full` | 0.387 ± 0.138 | 0.72 | 96/120 |
+| transfer_ref | combined | `zero_context` | 1.303 ± 0.569 | 2.57 | 15/40 |
+| transfer_ref | combined | `constant_context` | 0.859 ± 0.423 | 1.50 | 16/40 |
+| transfer_ref | combined | `no_impact` | 0.972 ± 0.483 | 1.70 | 39/120 |
+| transfer_ref | combined | `full` | 0.899 ± 0.387 | 1.80 | 45/120 |
 
 Paired `full - no_impact` in the stress cells (negative = behavioural supervision helps):
 
 | Stress | Condition | dRMSE (m) | 95% CI | significant |
 |---|---|---|---|---|
-| mismatch | actuator | +0.0896 | [+0.0420, +0.1350] | **yes** |
-| mismatch | combined | +0.0211 | [-0.0383, +0.0691] | no |
-| transfer_ref | actuator | -0.1437 | [-0.2702, -0.0225] | **yes** |
-| transfer_ref | combined | -0.1634 | [-0.2799, -0.0484] | **yes** |
+| mismatch | actuator | +0.1499 | [+0.1157, +0.2022] | **yes** |
+| mismatch | combined | +0.4239 | [+0.2856, +0.5877] | **yes** |
+| transfer_ref | actuator | +0.0120 | [-0.0153, +0.0423] | no |
+| transfer_ref | combined | -0.0728 | [-0.1691, +0.0121] | no |
 
-Of 4 stress cells: **2** favour `full`, **1** favour `no_impact`, and **1** are not separated from zero (mismatch|combined).
+Of 4 stress cells: **0** favour `full`, **2** favour `no_impact`, and **2** are not separated from zero (transfer_ref|actuator, transfer_ref|combined).
 
 **Honest reading of Claim 1 - the behavioural-supervision gain is NOT demonstrated.**
 
@@ -412,36 +416,44 @@ diverge only through the control.
 |---|---|---|---|---|---|---|
 | healthy | `zero_context` | 1.082 ± 0.153 | 2.00 | n/a | n/a | n/a |
 | healthy | `adaptive_mpc` | 1.236 ± 0.243 | 2.00 | n/a | n/a | n/a |
-| healthy | `nominal_recovery` | 1.358 ± 0.291 | 2.00 | n/a | n/a | 0.031 |
-| healthy | `constant_context` | 1.352 ± 0.239 | 2.00 | n/a | n/a | 0.041 |
-| healthy | `no_impact` | 1.137 ± 0.159 | 2.00 | n/a | n/a | 0.031 |
-| healthy | `full` | 1.189 ± 0.214 | 2.00 | n/a | n/a | 0.035 |
-| healthy | `full_no_check` | 1.189 ± 0.214 | 2.00 | n/a | n/a | n/a |
-| healthy | `fallback_only` | 1.222 ± 0.216 | 2.00 | n/a | n/a | 0.000 |
+| healthy | `nominal_recovery` | 0.855 ± 0.066 | 2.00 | n/a | n/a | 0.000 |
+| healthy | `constant_context` | 0.887 ± 0.083 | 2.00 | n/a | n/a | 0.000 |
+| healthy | `no_impact` | 0.794 ± 0.056 | 2.00 | n/a | n/a | 0.000 |
+| healthy | `full` | 0.959 ± 0.364 | 2.00 | n/a | n/a | 0.000 |
+| healthy | `full_no_check` | 0.959 ± 0.364 | 2.00 | n/a | n/a | n/a |
+| healthy | `fallback_only` | 0.722 ± 0.031 | 2.00 | n/a | n/a | 0.000 |
+| healthy | `no_alloc_aware` | 3.030 ± 1.181 | 5.42 | n/a | n/a | 0.000 |
+| healthy | `strict_first_action` | 0.948 ± 0.262 | 2.00 | n/a | n/a | 0.000 |
 | actuator | `zero_context` | 1.066 ± 0.131 | 2.00 | 60/60 | 11.05 | n/a |
 | actuator | `adaptive_mpc` | 1.256 ± 0.227 | 2.00 | 54/60 | 12.30 | n/a |
-| actuator | `nominal_recovery` | 1.730 ± 0.359 | 2.17 | 22/60 | 0.00 | 0.022 |
-| actuator | `constant_context` | 1.734 ± 0.384 | 2.13 | 21/60 | 0.00 | 0.029 |
-| actuator | `no_impact` | 1.423 ± 0.283 | 2.00 | 117/180 | 1.10 | 0.024 |
-| actuator | `full` | 1.522 ± 0.327 | 2.00 | 101/180 | 0.80 | 0.027 |
-| actuator | `full_no_check` | 1.522 ± 0.327 | 2.00 | 101/180 | 0.80 | n/a |
-| actuator | `fallback_only` | 1.527 ± 0.308 | 2.00 | 111/180 | 0.00 | 0.000 |
-| perception | `zero_context` | 1.497 ± 0.417 | 2.19 | 52/60 | 10.70 | n/a |
-| perception | `adaptive_mpc` | 1.843 ± 0.569 | 2.73 | 35/60 | 10.70 | n/a |
-| perception | `nominal_recovery` | 1.209 ± 0.223 | 2.00 | 53/60 | 11.20 | 0.038 |
-| perception | `constant_context` | 1.202 ± 0.214 | 2.00 | 55/60 | 11.10 | 0.051 |
-| perception | `no_impact` | 1.166 ± 0.224 | 2.00 | 171/180 | 8.20 | 0.037 |
-| perception | `full` | 1.191 ± 0.208 | 2.00 | 171/180 | 10.60 | 0.044 |
-| perception | `full_no_check` | 1.191 ± 0.208 | 2.00 | 171/180 | 10.60 | n/a |
-| perception | `fallback_only` | 1.150 ± 0.196 | 2.00 | 177/180 | 11.60 | 0.000 |
-| combined | `zero_context` | 1.418 ± 0.282 | 2.07 | 57/60 | 10.80 | n/a |
+| actuator | `nominal_recovery` | 0.864 ± 0.082 | 2.00 | 60/60 | 7.50 | 0.000 |
+| actuator | `constant_context` | 0.891 ± 0.076 | 2.00 | 60/60 | 8.90 | 0.000 |
+| actuator | `no_impact` | 0.808 ± 0.072 | 2.00 | 180/180 | 6.85 | 0.000 |
+| actuator | `full` | 0.978 ± 0.324 | 2.00 | 177/180 | 10.60 | 0.000 |
+| actuator | `full_no_check` | 0.978 ± 0.324 | 2.00 | 177/180 | 10.60 | n/a |
+| actuator | `fallback_only` | 0.729 ± 0.038 | 2.00 | 180/180 | 0.20 | 0.000 |
+| actuator | `no_alloc_aware` | 3.241 ± 1.223 | 6.07 | 34/180 | 23.05 | 0.000 |
+| actuator | `strict_first_action` | 1.001 ± 0.404 | 2.00 | 176/180 | 10.55 | 0.000 |
+| perception | `zero_context` | 1.497 ± 0.417 | 2.19 | 51/60 | 10.70 | n/a |
+| perception | `adaptive_mpc` | 1.843 ± 0.569 | 2.73 | 35/60 | 11.10 | n/a |
+| perception | `nominal_recovery` | 1.430 ± 0.654 | 2.00 | 53/60 | 7.40 | 0.000 |
+| perception | `constant_context` | 1.572 ± 0.684 | 2.00 | 49/60 | 7.20 | 0.000 |
+| perception | `no_impact` | 1.185 ± 0.504 | 2.00 | 162/180 | 5.95 | 0.000 |
+| perception | `full` | 1.508 ± 0.611 | 2.00 | 136/180 | 10.60 | 0.000 |
+| perception | `full_no_check` | 1.508 ± 0.611 | 2.00 | 136/180 | 10.60 | n/a |
+| perception | `fallback_only` | 1.001 ± 0.188 | 2.00 | 168/180 | 5.15 | 0.000 |
+| perception | `no_alloc_aware` | 2.755 ± 0.848 | 3.79 | 19/180 | 21.00 | 0.001 |
+| perception | `strict_first_action` | 1.633 ± 0.757 | 2.00 | 140/180 | 10.35 | 0.000 |
+| combined | `zero_context` | 1.418 ± 0.282 | 2.07 | 56/60 | 10.90 | n/a |
 | combined | `adaptive_mpc` | 1.717 ± 0.436 | 2.46 | 45/60 | 11.60 | n/a |
-| combined | `nominal_recovery` | 1.258 ± 0.256 | 2.00 | 52/60 | 17.30 | 0.036 |
-| combined | `constant_context` | 1.321 ± 0.342 | 2.00 | 48/60 | 13.25 | 0.042 |
-| combined | `no_impact` | 1.200 ± 0.196 | 2.00 | 151/180 | 14.60 | 0.038 |
-| combined | `full` | 1.243 ± 0.235 | 2.00 | 155/180 | 17.70 | 0.042 |
-| combined | `full_no_check` | 1.243 ± 0.235 | 2.00 | 155/180 | 17.70 | n/a |
-| combined | `fallback_only` | 1.243 ± 0.226 | 2.00 | 144/180 | 12.65 | 0.000 |
+| combined | `nominal_recovery` | 1.351 ± 0.629 | 2.00 | 56/60 | 8.75 | 0.000 |
+| combined | `constant_context` | 1.359 ± 0.490 | 2.00 | 51/60 | 8.40 | 0.000 |
+| combined | `no_impact` | 1.071 ± 0.248 | 2.00 | 173/180 | 7.00 | 0.000 |
+| combined | `full` | 1.452 ± 0.582 | 2.00 | 140/180 | 11.55 | 0.000 |
+| combined | `full_no_check` | 1.452 ± 0.582 | 2.00 | 140/180 | 11.55 | n/a |
+| combined | `fallback_only` | 0.954 ± 0.156 | 2.00 | 153/180 | 3.60 | 0.000 |
+| combined | `no_alloc_aware` | 2.921 ± 0.776 | 4.17 | 12/180 | 29.20 | 0.000 |
+| combined | `strict_first_action` | 1.500 ± 0.633 | 2.00 | 134/180 | 10.50 | 0.000 |
 
 ### 3.-1 What the corrections changed, separated
 
@@ -460,10 +472,10 @@ check, which together hid the dominant rejection path.
 
 | Condition | candidate | fb: first-action | fb: decrease test | fb: command budget | fb: solver | supervisor | sum |
 |---|---|---|---|---|---|---|---|
-| healthy | 0.097 | 0.244 | 0.000 | 0.035 | 0.000 | 0.624 | 1.000 |
-| actuator | 0.077 | 0.240 | 0.000 | 0.027 | 0.000 | 0.657 | 1.000 |
-| perception | 0.121 | 0.412 | 0.000 | 0.044 | 0.000 | 0.423 | 1.000 |
-| combined | 0.127 | 0.411 | 0.000 | 0.042 | 0.000 | 0.420 | 1.000 |
+| healthy | 0.987 | 0.000 | 0.000 | 0.000 | 0.000 | 0.013 | 1.000 |
+| actuator | 0.986 | 0.000 | 0.000 | 0.000 | 0.000 | 0.014 | 1.000 |
+| perception | 0.810 | 0.000 | 0.000 | 0.000 | 0.000 | 0.190 | 1.000 |
+| combined | 0.808 | 0.000 | 0.000 | 0.000 | 0.000 | 0.192 | 1.000 |
 
 Two things follow, and both matter for how the paper should describe this controller.
 
@@ -481,7 +493,7 @@ as the largest single rejection mechanism. Because it carries no eta, no choice 
 relax it. Tuning eta to raise the MPC action share therefore targets the one mechanism that
 is already inactive.
 
-Achieved-acceleration p95 across all healthy runs: 0.0479 ± 0.0043 m/s^2, still inside the measured band: **yes**. The comparison did not silently change the actuator authority.
+Achieved-acceleration p95 across all healthy runs: 0.0534 ± 0.0066 m/s^2, still inside the measured band: **yes**. The comparison did not silently change the actuator authority.
 
 ### 3.1 All paired effects on the primary endpoint
 
@@ -495,34 +507,58 @@ only three seeds its precision is genuinely poor, and more episodes cannot repai
 
 | Comparison | Condition | d post-onset RMSE (m) | episode 95% CI | crossed 95% CI | draws | rollouts | notes |
 |---|---|---|---|---|---|---|---|
-| `full-no_impact` | healthy | +0.0517 | [+0.0117, +0.0922] | [-0.0028, +0.1071] | 60 | 180 | episode-significant |
-| `full-no_impact` | actuator | +0.1381 | [+0.0711, +0.2079] | [+0.0185, +0.2489] | 60 | 180 | episode-significant |
-| `full-no_impact` | perception | +0.0453 | [+0.0053, +0.0838] | [-0.0207, +0.1041] | 60 | 180 | episode-significant |
-| `full-no_impact` | combined | +0.0659 | [+0.0184, +0.1136] | [+0.0011, +0.1308] | 60 | 180 | episode-significant |
-| `no_impact-constant_context` | healthy | -0.2150 | [-0.2714, -0.1650] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
-| `no_impact-constant_context` | actuator | -0.4370 | [-0.5375, -0.3414] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
-| `no_impact-constant_context` | perception | -0.0649 | [-0.1225, -0.0057] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
-| `no_impact-constant_context` | combined | -0.1774 | [-0.2916, -0.0761] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
-| `full-nominal_recovery` | healthy | -0.1692 | [-0.2336, -0.1070] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
-| `full-nominal_recovery` | actuator | -0.2927 | [-0.3843, -0.2037] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
-| `full-nominal_recovery` | perception | -0.0316 | [-0.0885, +0.0233] | n/a (single seed) | 60 | 180 | `nominal_recovery` broadcast across seeds |
-| `full-nominal_recovery` | combined | -0.0261 | [-0.1054, +0.0497] | n/a (single seed) | 60 | 180 | `nominal_recovery` broadcast across seeds |
-| `full-fallback_only` | healthy | -0.0334 | [-0.0872, +0.0174] | [-0.0990, +0.0299] | 60 | 180 | - |
-| `full-fallback_only` | actuator | -0.0132 | [-0.1205, +0.0853] | [-0.1410, +0.1051] | 60 | 180 | - |
-| `full-fallback_only` | perception | +0.0662 | [+0.0057, +0.1238] | [+0.0025, +0.1288] | 60 | 180 | episode-significant |
-| `full-fallback_only` | combined | -0.0029 | [-0.0778, +0.0736] | [-0.0929, +0.0866] | 60 | 180 | - |
+| `full-no_impact` | healthy | +0.1652 | [+0.1215, +0.2194] | [+0.1068, +0.2757] | 60 | 180 | episode-significant |
+| `full-no_impact` | actuator | +0.2787 | [+0.2208, +0.3545] | [+0.1965, +0.3804] | 60 | 180 | episode-significant |
+| `full-no_impact` | perception | +0.4357 | [+0.2998, +0.5692] | [+0.2129, +0.6543] | 60 | 180 | episode-significant |
+| `full-no_impact` | combined | +0.5104 | [+0.3697, +0.6628] | [+0.3481, +0.6954] | 60 | 180 | episode-significant |
+| `no_impact-constant_context` | healthy | -0.0933 | [-0.1091, -0.0779] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
+| `no_impact-constant_context` | actuator | -0.1384 | [-0.1656, -0.1124] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
+| `no_impact-constant_context` | perception | -0.5152 | [-0.7457, -0.3190] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
+| `no_impact-constant_context` | combined | -0.3841 | [-0.5328, -0.2475] | n/a (single seed) | 60 | 180 | episode-significant, `constant_context` broadcast across seeds |
+| `full-nominal_recovery` | healthy | +0.1038 | [+0.0609, +0.1574] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
+| `full-nominal_recovery` | actuator | +0.1808 | [+0.1226, +0.2568] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
+| `full-nominal_recovery` | perception | +0.1057 | [-0.1167, +0.3178] | n/a (single seed) | 60 | 180 | `nominal_recovery` broadcast across seeds |
+| `full-nominal_recovery` | combined | +0.1346 | [-0.0452, +0.3179] | n/a (single seed) | 60 | 180 | `nominal_recovery` broadcast across seeds |
+| `full-fallback_only` | healthy | +0.2367 | [+0.1899, +0.2948] | [+0.1830, +0.3403] | 60 | 180 | episode-significant |
+| `full-fallback_only` | actuator | +0.4475 | [+0.3854, +0.5281] | [+0.3722, +0.5615] | 60 | 180 | episode-significant |
+| `full-fallback_only` | perception | +0.6753 | [+0.5543, +0.8085] | [+0.5030, +0.8630] | 60 | 180 | episode-significant |
+| `full-fallback_only` | combined | +0.6745 | [+0.5262, +0.8406] | [+0.5206, +0.8534] | 60 | 180 | episode-significant |
 | `full-full_no_check` | healthy | +0.0000 | [+0.0000, +0.0000] | [+0.0000, +0.0000] | 60 | 180 | - |
 | `full-full_no_check` | actuator | +0.0000 | [+0.0000, +0.0000] | [+0.0000, +0.0000] | 60 | 180 | - |
 | `full-full_no_check` | perception | +0.0000 | [+0.0000, +0.0000] | [+0.0000, +0.0000] | 60 | 180 | - |
 | `full-full_no_check` | combined | +0.0000 | [+0.0000, +0.0000] | [+0.0000, +0.0000] | 60 | 180 | - |
-| `full-adaptive_mpc` | healthy | -0.0469 | [-0.1007, +0.0045] | n/a (single seed) | 60 | 180 | `adaptive_mpc` broadcast across seeds |
-| `full-adaptive_mpc` | actuator | +0.3320 | [+0.2332, +0.4331] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
-| `full-adaptive_mpc` | perception | -0.9561 | [-1.1489, -0.7824] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
-| `full-adaptive_mpc` | combined | -0.7078 | [-0.8666, -0.5582] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
-| `full-zero_context` | healthy | +0.1065 | [+0.0694, +0.1441] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
-| `full-zero_context` | actuator | +0.6099 | [+0.5325, +0.6888] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
-| `full-zero_context` | perception | -0.5027 | [-0.6538, -0.3717] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
-| `full-zero_context` | combined | -0.3148 | [-0.4241, -0.2068] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `full-adaptive_mpc` | healthy | -0.2764 | [-0.3365, -0.2147] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `full-adaptive_mpc` | actuator | -0.4464 | [-0.5238, -0.3682] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `full-adaptive_mpc` | perception | -0.4536 | [-0.6325, -0.2809] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `full-adaptive_mpc` | combined | -0.3700 | [-0.5185, -0.2162] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `full-zero_context` | healthy | -0.1231 | [-0.1656, -0.0754] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `full-zero_context` | actuator | -0.1685 | [-0.2249, -0.0987] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `full-zero_context` | perception | -0.0002 | [-0.1265, +0.1339] | n/a (single seed) | 60 | 180 | `zero_context` broadcast across seeds |
+| `full-zero_context` | combined | +0.0230 | [-0.1242, +0.1786] | n/a (single seed) | 60 | 180 | `zero_context` broadcast across seeds |
+| `full-no_alloc_aware` | healthy | -2.0704 | [-2.2722, -1.8651] | [-2.4483, -1.6822] | 60 | 180 | episode-significant |
+| `full-no_alloc_aware` | actuator | -2.9899 | [-3.2310, -2.7558] | [-3.4984, -2.4874] | 60 | 180 | episode-significant |
+| `full-no_alloc_aware` | perception | -1.6053 | [-1.8203, -1.3794] | [-1.9899, -1.2310] | 60 | 180 | episode-significant |
+| `full-no_alloc_aware` | combined | -1.9109 | [-2.1033, -1.7138] | [-2.1417, -1.6515] | 60 | 180 | episode-significant |
+| `full-strict_first_action` | healthy | +0.0107 | [-0.0172, +0.0488] | [-0.0238, +0.0727] | 60 | 180 | - |
+| `full-strict_first_action` | actuator | -0.0342 | [-0.0950, +0.0188] | [-0.2023, +0.0867] | 60 | 180 | - |
+| `full-strict_first_action` | perception | -0.1569 | [-0.3025, -0.0110] | [-0.3675, +0.0496] | 60 | 180 | episode-significant |
+| `full-strict_first_action` | combined | -0.0619 | [-0.1931, +0.0744] | [-0.2681, +0.1139] | 60 | 180 | - |
+| `no_impact-nominal_recovery` | healthy | -0.0615 | [-0.0722, -0.0515] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
+| `no_impact-nominal_recovery` | actuator | -0.0979 | [-0.1180, -0.0783] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
+| `no_impact-nominal_recovery` | perception | -0.3301 | [-0.4928, -0.1753] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
+| `no_impact-nominal_recovery` | combined | -0.3758 | [-0.5497, -0.2287] | n/a (single seed) | 60 | 180 | episode-significant, `nominal_recovery` broadcast across seeds |
+| `no_impact-fallback_only` | healthy | +0.0715 | [+0.0636, +0.0801] | [+0.0557, +0.0864] | 60 | 180 | episode-significant |
+| `no_impact-fallback_only` | actuator | +0.1688 | [+0.1519, +0.1875] | [+0.1375, +0.1984] | 60 | 180 | episode-significant |
+| `no_impact-fallback_only` | perception | +0.2395 | [+0.1308, +0.3656] | [+0.1033, +0.3943] | 60 | 180 | episode-significant |
+| `no_impact-fallback_only` | combined | +0.1641 | [+0.0969, +0.2358] | [+0.0777, +0.2679] | 60 | 180 | episode-significant |
+| `no_impact-zero_context` | healthy | -0.2883 | [-0.3197, -0.2591] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `no_impact-zero_context` | actuator | -0.4472 | [-0.4805, -0.4165] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `no_impact-zero_context` | perception | -0.4360 | [-0.5421, -0.3273] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `no_impact-zero_context` | combined | -0.4873 | [-0.5804, -0.3943] | n/a (single seed) | 60 | 180 | episode-significant, `zero_context` broadcast across seeds |
+| `no_impact-adaptive_mpc` | healthy | -0.4417 | [-0.4944, -0.3902] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `no_impact-adaptive_mpc` | actuator | -0.7251 | [-0.7928, -0.6627] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `no_impact-adaptive_mpc` | perception | -0.8893 | [-1.0454, -0.7451] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
+| `no_impact-adaptive_mpc` | combined | -0.8803 | [-1.0233, -0.7399] | n/a (single seed) | 60 | 180 | episode-significant, `adaptive_mpc` broadcast across seeds |
 
 ### 3.2 Seed-level RMSE
 
@@ -530,35 +566,43 @@ Required with only three seeds: pooled intervals alone would hide seed spread.
 
 | Method | Condition | seed 0 | seed 1 | seed 2 |
 |---|---|---|---|---|
-| `nominal_recovery` | healthy | 1.3579 | n/a | n/a |
-| `nominal_recovery` | actuator | 1.7295 | n/a | n/a |
-| `nominal_recovery` | perception | 1.2093 | n/a | n/a |
-| `nominal_recovery` | combined | 1.2578 | n/a | n/a |
-| `constant_context` | healthy | 1.3520 | n/a | n/a |
-| `constant_context` | actuator | 1.7343 | n/a | n/a |
-| `constant_context` | perception | 1.2022 | n/a | n/a |
-| `constant_context` | combined | 1.3209 | n/a | n/a |
-| `no_impact` | healthy | 1.1320 | 1.1381 | 1.1409 |
-| `no_impact` | actuator | 1.4233 | 1.3955 | 1.4512 |
-| `no_impact` | perception | 1.1570 | 1.1910 | 1.1496 |
-| `no_impact` | combined | 1.1930 | 1.1811 | 1.2249 |
-| `full` | healthy | 1.2263 | 1.1660 | 1.1738 |
-| `full` | actuator | 1.5574 | 1.5303 | 1.4789 |
-| `full` | perception | 1.1975 | 1.1916 | 1.1848 |
-| `full` | combined | 1.2550 | 1.2129 | 1.2606 |
-| `full_no_check` | healthy | 1.2263 | 1.1660 | 1.1738 |
-| `full_no_check` | actuator | 1.5574 | 1.5303 | 1.4789 |
-| `full_no_check` | perception | 1.1975 | 1.1916 | 1.1848 |
-| `full_no_check` | combined | 1.2550 | 1.2129 | 1.2606 |
-| `fallback_only` | healthy | 1.2221 | 1.2221 | 1.2221 |
-| `fallback_only` | actuator | 1.5272 | 1.5272 | 1.5272 |
-| `fallback_only` | perception | 1.1498 | 1.1498 | 1.1498 |
-| `fallback_only` | combined | 1.2435 | 1.2435 | 1.2435 |
+| `nominal_recovery` | healthy | 0.8554 | n/a | n/a |
+| `nominal_recovery` | actuator | 0.8640 | n/a | n/a |
+| `nominal_recovery` | perception | 1.4296 | n/a | n/a |
+| `nominal_recovery` | combined | 1.3505 | n/a | n/a |
+| `constant_context` | healthy | 0.8872 | n/a | n/a |
+| `constant_context` | actuator | 0.8910 | n/a | n/a |
+| `constant_context` | perception | 1.5723 | n/a | n/a |
+| `constant_context` | combined | 1.3591 | n/a | n/a |
+| `no_impact` | healthy | 0.8041 | 0.7784 | 0.7992 |
+| `no_impact` | actuator | 0.8189 | 0.7898 | 0.8156 |
+| `no_impact` | perception | 1.2284 | 1.1131 | 1.2128 |
+| `no_impact` | combined | 1.0578 | 1.0318 | 1.1227 |
+| `full` | healthy | 0.9171 | 1.0158 | 0.9446 |
+| `full` | actuator | 0.9648 | 0.9645 | 1.0044 |
+| `full` | perception | 1.4132 | 1.5390 | 1.5714 |
+| `full` | combined | 1.4664 | 1.4552 | 1.4336 |
+| `full_no_check` | healthy | 0.9171 | 1.0158 | 0.9446 |
+| `full_no_check` | actuator | 0.9648 | 0.9645 | 1.0044 |
+| `full_no_check` | perception | 1.4132 | 1.5390 | 1.5714 |
+| `full_no_check` | combined | 1.4664 | 1.4552 | 1.4336 |
+| `fallback_only` | healthy | 0.7224 | 0.7224 | 0.7224 |
+| `fallback_only` | actuator | 0.7285 | 0.7285 | 0.7285 |
+| `fallback_only` | perception | 1.0006 | 1.0006 | 1.0006 |
+| `fallback_only` | combined | 0.9537 | 0.9537 | 0.9537 |
+| `no_alloc_aware` | healthy | 3.3225 | 2.8303 | 2.9358 |
+| `no_alloc_aware` | actuator | 3.5711 | 2.8934 | 3.2590 |
+| `no_alloc_aware` | perception | 2.9272 | 2.6575 | 2.6793 |
+| `no_alloc_aware` | combined | 2.9602 | 2.8315 | 2.9704 |
+| `strict_first_action` | healthy | 0.9305 | 0.9874 | 0.9275 |
+| `strict_first_action` | actuator | 0.9421 | 1.0905 | 0.9710 |
+| `strict_first_action` | perception | 1.5528 | 1.5881 | 1.7570 |
+| `strict_first_action` | combined | 1.4582 | 1.5911 | 1.4516 |
 
 ### 3.3 How eta was chosen
 
-The one-step decrease condition is violated by the MPC candidate in **90.1%** of monitored steps at hardware authority.
-Conformal calibration at delta=0.025 would give eta = 4.7160, which accepts
+The one-step decrease condition is violated by the MPC candidate in **67.0%** of monitored steps at hardware authority.
+Conformal calibration at delta=0.025 would give eta = 2.3339, which accepts
 ~97.5% and is therefore near-inert. Conformal calibration targets coverage of a
 *certificate* claim, and Stage 7 finds no certificate to cover, so eta is instead
 selected as the value minimising calibration-split RMSE over a declared grid.
@@ -566,16 +610,16 @@ Test episodes are disjoint from calibration.
 
 | eta | calibration RMSE (m) | peak (m) | rejected fraction |
 |---|---|---|---|
-| 0.0000 | 1.7912 | 2.031 | 0.020 |
-| 0.5000 | 1.7677 | 2.792 | 0.027 |
-| 1.0000 | 1.4855 | 2.334 | 0.032 |
-| 2.0000 | 1.3304 | 2.139 | 0.041 **<- selected** |
-| 4.7160 | 1.3324 | 2.135 | 0.037 |
+| 0.0000 | 1.8059 | 2.501 | 0.000 |
+| 0.5000 | 3.3777 | 5.176 | 0.000 |
+| 1.0000 | 1.2521 | 2.326 | 0.000 |
+| 2.0000 | 1.1331 | 2.287 | 0.000 **<- selected** |
+| 2.3339 | 1.1388 | 2.287 | 0.000 |
 
 **Reading this table correctly.** eta is added to the right-hand side of Eq. (18), so a
 larger eta *relaxes* the decrease inequality rather than enforcing it harder. Tracking
-error nevertheless falls from 1.791 m to 1.330 m (**26%**) as eta grows from 0.00 to
-2.00, while the rejected fraction *also* rises from 2.0% to 4.1%.
+error nevertheless falls from 3.378 m to 1.133 m (**66%**) as eta grows from 0.50 to
+2.00, while the rejected fraction *also* rises from 0.0% to 0.0%.
 
 Those two facts look contradictory only if eta affected nothing but the candidate test.
 It does not. The same eta appears in the fallback's own acceptance check, and a passing
@@ -593,11 +637,11 @@ attribution is stated. What the curve does support is narrower: eta matters for
 closed-loop tracking, and eta = 0 is not the best available choice.
 
 **This must not be reported as a rarely-active safety net.** At the selected eta the
-check rejects 4% of candidate wrenches, so for most samples the transmitted
+check rejects 0% of candidate wrenches, so for most samples the transmitted
 command is the fallback, and the closed loop is nearer to the certified gain than to
 the MPC. The honest framing is that the supervision layer is a *frequent override* whose
 authority happens to help tracking at hardware thrust, and that the MPC candidate
-clears the one-step decrease test only a minority of the time (9.9%). Both facts are consequences of the same
+clears the one-step decrease test only a minority of the time (33.0%). Both facts are consequences of the same
 underactuation that empties the certificate in Sec 4.
 
 ---
@@ -683,27 +727,27 @@ runs **both** candidates rather than adopting one. The earlier campaign's grid s
 
 | Condition | N | RMSE (m) | rejected fraction | wall ms/step |
 |---|---|---|---|---|
-| healthy | 10 **<- manuscript** | 1.260 | 0.029 | 4.31 |
-| healthy | 12 **<- build spec** | 1.273 | 0.034 | 4.21 |
-| healthy | 20 | 1.162 | 0.068 | 4.69 |
-| healthy | 30 | 1.131 | 0.066 | 5.43 |
-| healthy | 40 | 1.158 | 0.065 | 5.78 |
-| healthy | 50 | 1.105 | 0.067 | 6.27 |
-| combined | 10 **<- manuscript** | 1.262 | 0.037 | 4.54 |
-| combined | 12 **<- build spec** | 1.250 | 0.048 | 4.68 |
-| combined | 20 | 1.263 | 0.069 | 5.27 |
-| combined | 30 | 1.298 | 0.072 | 5.76 |
-| combined | 40 | 1.256 | 0.073 | 6.06 |
-| combined | 50 | 1.293 | 0.077 | 6.52 |
+| healthy | 10 **<- manuscript** | 0.919 | 0.000 | 15.19 |
+| healthy | 12 **<- build spec** | 0.926 | 0.000 | 15.42 |
+| healthy | 20 | 1.087 | 0.000 | 16.36 |
+| healthy | 30 | 0.944 | 0.000 | 17.39 |
+| healthy | 40 | 0.904 | 0.000 | 18.46 |
+| healthy | 50 | 0.900 | 0.000 | 19.75 |
+| combined | 10 **<- manuscript** | 1.500 | 0.000 | 14.94 |
+| combined | 12 **<- build spec** | 1.429 | 0.000 | 14.73 |
+| combined | 20 | 1.521 | 0.000 | 15.73 |
+| combined | 30 | 1.430 | 0.000 | 16.45 |
+| combined | 40 | 1.321 | 0.000 | 17.49 |
+| combined | 50 | 1.278 | 0.000 | 18.78 |
 
 Paired directly on matched scenario draws, the two candidate horizons are indistinguishable:
 
 | Condition | dRMSE (manuscript - build spec), m | 95% interval | significant? |
 |---|---:|---:|---|
-| healthy | -0.0138 | [-0.0730, +0.0491] | no |
-| combined | +0.0118 | [-0.1512, +0.1457] | no |
+| healthy | -0.0068 | [-0.0321, +0.0194] | no |
+| combined | +0.0709 | [-0.1917, +0.3537] | no |
 
-The largest difference is **0.0138 m**, against the 0.05-0.6 m effects this study is
+The largest difference is **0.0709 m**, against the 0.05-0.6 m effects this study is
 trying to resolve elsewhere. So the horizon discrepancy is **not load-bearing for any
 conclusion here**, and the manuscript does not need to resolve it to use these results -
 though it should still be resolved before the horizon is quoted as a fact about the
@@ -727,10 +771,10 @@ ablations the hardware never flew.
 
 | Comparison | Hardware zero -> learned | Simulation zero_context -> full |
 |---|---|---|
-| actuation fault | 1.105 -> 0.950 m, **-14.0%** (n=5) | 1.066 -> 1.522 m, **--42.8%** (n=60) |
-| perception degradation | 1.895 -> 0.798 m, **-57.9%** (n=5) | 1.497 -> 1.191 m, **-20.4%** (n=60) |
-| healthy | no matched hardware pair | 1.082 -> 1.189 m, **--9.8%** (n=60) |
-| combined | no matched hardware pair | 1.418 -> 1.243 m, **-12.3%** (n=60) |
+| actuation fault | 1.105 -> 0.950 m, **-14.0%** (n=5) | 1.066 -> 0.978 m, **-8.3%** (n=60) |
+| perception degradation | 1.895 -> 0.798 m, **-57.9%** (n=5) | 1.497 -> 1.508 m, **--0.7%** (n=60) |
+| healthy | no matched hardware pair | 1.082 -> 0.959 m, **-11.4%** (n=60) |
+| combined | no matched hardware pair | 1.418 -> 1.452 m, **--2.4%** (n=60) |
 
 Hardware's largest actuation gain (1.315 -> 0.781 m, -40.6%, n=3) came from the act30 severity
 level, which has **no matched simulated counterpart**: the simulated actuator condition
@@ -740,8 +784,8 @@ table rather than paired with something it does not correspond to.
 
 Read this honestly in both directions:
 
-- **The direction is condition-dependent, and does not replicate everywhere.** Learned context significantly beats zero-context under perception and combined (2/4), and is significantly **worse** under healthy and actuator (2/4). The advantage is therefore specific to the perception-degraded regimes, which is the regime the hardware occlusion runs probe, and the healthy and actuator-only cells run the other way.
-- **The magnitudes do not replicate either.** The simulated perception improvement is 20.4% against the hardware's 57.9%, i.e. roughly 2.8x smaller. The hardware occluded cells have the largest spread in Table I, so the honest inference is that the biggest hardware percentage sits at the optimistic end of what this mechanism delivers.
+- **The direction is condition-dependent, and does not replicate everywhere.** Learned context significantly beats zero-context under healthy and actuator (2/4), and is significantly **worse** under none (0/4), with 2 unresolved. The advantage is therefore specific to the perception-degraded regimes, which is the regime the hardware occlusion runs probe, and the healthy and actuator-only cells run the other way.
+- **The magnitudes do not replicate either.** The simulated perception improvement is -0.7% against the hardware's 57.9%, i.e. roughly -80.2x smaller. The hardware occluded cells have the largest spread in Table I, so the honest inference is that the biggest hardware percentage sits at the optimistic end of what this mechanism delivers.
 - **What this costs the paper.** A uniform win was claimed by the earlier campaign and did not survive closing the fault-information leak. The defensible claim is now narrower: context learning helps when perception is degraded, and is not a general improvement across fault modes.
 
 This is also the answer to "why simulate at all when you have hardware?": the simulation
@@ -789,11 +833,11 @@ boundary, and lead its empirical support with the check.
 In rough order of how much a reviewer would punish leaving it:
 
 1. **Do not leave Contribution 1 worded as a supervision gain** while an appendix reports the negative ablation. An internal contradiction is worse than a null result. Restate it around the context input.
-2. **Fix the framing of the acceptance check.** At the selected eta it rejects 3%-4% of candidate wrenches on the test split and the MPC candidate clears the one-step decrease test only 9.9% of the time. It is a *frequent override*, not a rarely-active safety net, and describing it as light-touch is contradicted by our own logs.
+2. **Fix the framing of the acceptance check.** At the selected eta it rejects 0%-0% of candidate wrenches on the test split and the MPC candidate clears the one-step decrease test only 33.0% of the time. It is a *frequent override*, not a rarely-active safety net, and describing it as light-touch is contradicted by our own logs.
 3. **Promote the acceptance-check result.** It is the largest and most robust number here and is currently under-sold relative to the context story.
 4. **State the certificate result as a located boundary**, with the four requirements above, rather than as a guarantee or as a silent omission.
 5. **Add the replication table of Sec 5.1** next to hardware Table I, including the honest note that the simulated perception gain is about half the hardware figure.
-6. **Keep the abstract's admission** that both items remain to be validated, but say in the same breath what *is* validated: context conditioning and the allocated-command check, on hardware and in a 3840-episode matched simulation.
+6. **Keep the abstract's admission** that both items remain to be validated, but say in the same breath what *is* validated: context conditioning and the allocated-command check, on hardware and in a 5280-episode matched simulation.
 
 ### 5.4 Claims this study does NOT let you make
 

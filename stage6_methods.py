@@ -53,7 +53,10 @@ MODEL_SEEDS = (0, 1, 2)
 N_TEST_PER_COND = 60          # protocol Sec 6: 50-100 matched episodes per condition
 N_CALIB_PER_COND = 25
 STEPS = C.EPISODE_STEPS
-HOLD_STEPS = 20               # 2 s inside tolerance counts as recovered
+# Sec 6.2: a 2 s dwell at 10 Hz spans 20 INTERVALS and therefore 21 OBSERVATIONS.
+# Requiring 20 observations asks for 1.9 s of elapsed time under the sample-hold
+# convention used here, which silently relaxes every declared dwell by one sample.
+HOLD_STEPS = 21               # 2.0 s (= 20 intervals) inside tolerance
 
 # Sec 7.1 method matrix. The ID column is what the paper tables cite; the internal
 # name is what the code and checkpoints use.
@@ -64,16 +67,22 @@ HOLD_STEPS = 20               # 2 s inside tolerance counts as recovered
 #   M4  full_no_check      M3 checkpoint, post-allocation acceptance bypassed
 #   M5  fallback_only      checked fallback feedback only, no MPC planning
 #   M6  adaptive_mpc       adaptation baseline with a documented update law
+#   M7  no_alloc_aware     M3 without allocation-aware command selection
+#   M8  strict_first_action M3 with the manuscript's allowance-free first-action test
 #   --  zero_context       hardware-matched comparator, DIAGNOSTIC only
+# M7 and M8 exist because this campaign DEPARTS from the manuscript in exactly two
+# places, and each departure must carry its own measured effect rather than a claim.
 METHOD_IDS = {"nominal_recovery": "M0", "constant_context": "M1",
               "no_impact": "M2", "full": "M3", "full_no_check": "M4",
               "fallback_only": "M5", "adaptive_mpc": "M6",
+              "no_alloc_aware": "M7", "strict_first_action": "M8",
               "zero_context": "HW"}
 
 # methods that do not depend on a training seed
 SEEDLESS = ("zero_context", "adaptive_mpc")
 LEARNED = ("nominal_recovery", "constant_context", "no_impact", "full",
-           "full_no_check", "fallback_only")
+           "full_no_check", "fallback_only", "no_alloc_aware",
+           "strict_first_action")
 METHODS = SEEDLESS + LEARNED
 
 # Sec 8.1: task success thresholds declared BEFORE the final test, and fixed across
@@ -85,7 +94,7 @@ METHODS = SEEDLESS + LEARNED
 # the baseline moves.
 TASK_TOL_POS = 0.15          # m
 TASK_TOL_YAW = np.deg2rad(5.0)
-TASK_DWELL_STEPS = 20        # 2.0 s at 10 Hz
+TASK_DWELL_STEPS = 21        # 2.0 s = 20 intervals = 21 observations at 10 Hz
 TASK_DEADLINE_STEPS = C.EPISODE_STEPS
 
 # Protocol Sec 5 requires >=3 training seeds for the variants whose TRAINING differs,
@@ -99,7 +108,10 @@ TASK_DEADLINE_STEPS = C.EPISODE_STEPS
 SEEDS_FOR = {"no_impact": MODEL_SEEDS, "full": MODEL_SEEDS,
              "full_no_check": MODEL_SEEDS,
              "constant_context": (0,), "nominal_recovery": (0,),
-             "fallback_only": MODEL_SEEDS}
+             "fallback_only": MODEL_SEEDS,
+             # the two declared-departure ablations reuse the `full` checkpoints, so
+             # they are per-checkpoint comparisons and run on every seed
+             "no_alloc_aware": MODEL_SEEDS, "strict_first_action": MODEL_SEEDS}
 
 
 # --------------------------------------------------------------------------
@@ -169,9 +181,11 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
     # would confound the representation with the supervision and make the
     # "does a CHANGING context help?" comparison unreadable.
     tag = {"no_impact": "no_impact", "full": "full", "full_no_check": "full",
-           "full_monitor": "full", "constant_context": "const"}[method]
+           "full_monitor": "full", "constant_context": "const",
+           "no_alloc_aware": "full", "strict_first_action": "full"}[method]
     mode = {"no_impact": "enforce", "full": "enforce", "full_no_check": "enforce",
-            "full_monitor": "monitor", "constant_context": "enforce"}[method]
+            "full_monitor": "monitor", "constant_context": "enforce",
+            "no_alloc_aware": "enforce", "strict_first_action": "enforce"}[method]
     # Sec 4.2: M4 (`full_no_check`) must be a SINGLE-component ablation. It keeps the
     # same checkpoint, eligibility/supervisor diversion, first-action condition,
     # solver fallback and command-admissibility budget as M3, and disables ONLY the
@@ -179,6 +193,14 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
     # switched off three mechanisms at once, so the gap could not be attributed to the
     # allocated-command check.
     extra = ({"enforce_post_alloc": False} if method == "full_no_check" else {})
+    # M7/M8: each DECLARED DEPARTURE from the manuscript gets its own single-component
+    # ablation, so its contribution is measured rather than asserted. M7 removes
+    # allocation-aware command selection and requests the affine/optimised wrench
+    # directly. M8 restores the manuscript's allowance-free first-action condition.
+    if method == "no_alloc_aware":
+        extra = {"alloc_aware": False}
+    elif method == "strict_first_action":
+        extra = {"first_action_eta": False}
     return LearnedContextPolicy(
         f"{DATA}/model_{tag}_s{model_seed}.pt", check_mode=mode,
         P=cert["P"], K=cert["K"], lam=cert["lam"], eta=cert["eta"],
@@ -186,6 +208,74 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
 
 
 # --------------------------------------------------------------------------
+def score_recovery(inside, onset, hold):
+    """Ordered recovery scoring, Sec 6.2.
+
+    `inside[k]` is membership in the declared recovery tolerance at sample k, `onset`
+    the fault-onset index. Pass inside=None for an episode with no onset.
+
+    The defect this replaces: the previous scorer searched for the first qualifying
+    dwell anywhere at or after onset and then, separately, asked whether ANY later
+    sample left tolerance. An episode that sat inside tolerance across onset, dwelled,
+    and only afterwards was thrown out was therefore recorded as `reacquired` with
+    `recovery_time = 0` - a reacquisition credited before the excursion it was supposed
+    to recover from. Order is now explicit: an excursion must be located first, and the
+    qualifying dwell must begin strictly after it.
+
+    Returns both clocks the plan asks for (`t_from_onset`, `t_from_excursion`), both
+    dwell endpoints (`t_return_start`, `t_return_complete`), and whether the vehicle
+    departed again after a successful return, since sustained recovery and
+    recover-then-fail are different outcomes.
+    """
+    out = {"mode": "healthy", "success": False, "inside_at_onset": None,
+           "excursion": None, "reacquired": None, "maintained": None,
+           "t_from_onset": np.nan, "t_from_excursion": np.nan,
+           "t_return_start": np.nan, "t_return_complete": np.nan,
+           "departed_again": None, "window_complete": None, "reason": "no_onset"}
+    if inside is None or onset is None:
+        return out
+    inside = np.asarray(inside, dtype=bool)
+    n = len(inside)
+    # The assessment window must actually be observed. An episode that stops early
+    # cannot establish maintenance: absence of later samples is not absence of a later
+    # excursion, so it is censored rather than credited.
+    out["window_complete"] = bool(n - onset >= hold)
+    out["inside_at_onset"] = bool(inside[onset])
+
+    if not out["window_complete"]:
+        out.update(mode="censored", reason="assessment_window_incomplete")
+        return out
+
+    post = inside[onset:]
+    first_out = int(np.argmax(~post)) if (~post).any() else None
+
+    if out["inside_at_onset"] and first_out is None:
+        # inside at onset, full window observed, and it never left
+        out.update(mode="maintenance", success=True, maintained=True,
+                   excursion=False, reacquired=None, t_from_onset=0.0,
+                   t_return_start=0.0, t_return_complete=float((hold - 1) * C.TS),
+                   departed_again=False, reason="maintained")
+        return out
+
+    # An excursion exists. It starts at onset if already outside there, otherwise at
+    # the first later sample outside tolerance.
+    exc = onset if not out["inside_at_onset"] else onset + first_out
+    out.update(mode="reacquisition", excursion=True)
+    for t in range(exc + 1, n - hold + 1):
+        if inside[t:t + hold].all():
+            out.update(success=True, reacquired=True,
+                       t_from_onset=float((t - onset) * C.TS),
+                       t_from_excursion=float((t - exc) * C.TS),
+                       t_return_start=float((t - onset) * C.TS),
+                       t_return_complete=float((t + hold - 1 - onset) * C.TS),
+                       departed_again=bool((~inside[t + hold:]).any()),
+                       reason="reacquired")
+            return out
+    out.update(success=False, reacquired=False, maintained=False,
+               reason="no_qualifying_dwell_after_excursion")
+    return out
+
+
 def episode_metrics(log, sc, tol):
     """Per-trial metrics. Physical error is against the ORIGINAL scoring reference."""
     a = log.arrays()
@@ -222,6 +312,19 @@ def episode_metrics(log, sc, tol):
         "has_recovery": has_rec, "check_enforced": checking,
         "n_fault_skips": log.meta["n_fault_skips"],
         "solve_ms_p95": float(np.nanpercentile(a["solve_ms"], 95)),
+        # Sec 12: complete decision latency. Reported at several quantiles because a
+        # median comfortably inside the period says nothing about the tail that
+        # actually causes a missed deadline. Simulation-workstation timing, not flight.
+        "decision_ms_p50": float(np.nanpercentile(a["decision_ms"], 50))
+        if len(a.get("decision_ms", [])) else np.nan,
+        "decision_ms_p95": float(np.nanpercentile(a["decision_ms"], 95))
+        if len(a.get("decision_ms", [])) else np.nan,
+        "decision_ms_p99": float(np.nanpercentile(a["decision_ms"], 99))
+        if len(a.get("decision_ms", [])) else np.nan,
+        "decision_ms_max": float(np.nanmax(a["decision_ms"]))
+        if len(a.get("decision_ms", [])) else np.nan,
+        "deadline_miss_rate": float(np.mean(a["deadline_miss"]))
+        if len(a.get("deadline_miss", [])) else np.nan,
     }
 
     # ---- action source: which controller actually produced the transmitted action ----
@@ -299,28 +402,18 @@ def episode_metrics(log, sc, tol):
     m["attempted"] = bool(onset is not None and onset + HOLD_STEPS < n)
     m["success"], m["recovery_time"] = False, np.nan
     if m["attempted"]:
-        # Sec 8.2: separate MAINTENANCE (already inside tolerance at onset and staying
-        # there) from REACQUISITION (thrown out and having to come back). Pooling them
-        # lets easy episodes inflate a recovery rate.
-        m["was_in_tol_at_onset"] = bool(inside_task[onset])
-        m["mode"] = "maintenance" if inside_task[onset] else "reacquisition"
-        # Sec 5.1: the recovery clock starts at ONSET and the qualifying dwell must lie
-        # entirely at or after onset, so a dwell achieved before the fault can never be
-        # credited as recovery from it. `tol` is the baseline-relative diagnostic
+        # Sec 6.2: ordered recovery scoring. `tol` is the baseline-relative diagnostic
         # tolerance (~0.66 m), deliberately distinct from the 0.15 m task tolerance;
         # the two are never merged into one column.
-        inside = e_pos <= tol
-        for t in range(onset, n - HOLD_STEPS + 1):
-            if inside[t:t + HOLD_STEPS].all():
-                m["success"] = True
-                m["recovery_time"] = float((t - onset) * C.TS)
-                break
-        # Sec 5.1 "reacquisition": an excursion OUT of tolerance actually occurred
-        # after onset and the vehicle then came back. Maintenance never left.
-        left_after_onset = bool((~inside[onset:]).any())
-        m["excursion_after_onset"] = left_after_onset
-        m["reacquired"] = bool(m["success"] and left_after_onset)
-        m["maintained"] = bool(m["success"] and not left_after_onset)
+        rec = score_recovery(e_pos <= tol, onset, HOLD_STEPS)
+        m.update({f"rec_{k}": v for k, v in rec.items()})
+        m["was_in_tol_at_onset"] = rec["inside_at_onset"]
+        m["mode"] = rec["mode"]
+        m["success"] = rec["success"]
+        m["recovery_time"] = rec["t_from_onset"]
+        m["excursion_after_onset"] = rec["excursion"]
+        m["reacquired"] = rec["reacquired"]
+        m["maintained"] = rec["maintained"]
         # post-onset window is FIXED relative to onset and identical across methods
         m["post_onset_rmse"] = float(np.sqrt(np.mean(e_pos[onset:] ** 2)))
         m["post_onset_peak"] = float(e_pos[onset:].max())
@@ -335,6 +428,8 @@ def episode_metrics(log, sc, tol):
                     break
     else:
         m["was_in_tol_at_onset"] = bool(inside_task[0])
+        for k_, v_ in score_recovery(None, None, HOLD_STEPS).items():
+            m[f"rec_{k_}"] = v_
         m["mode"] = "healthy"
         m["post_onset_rmse"] = m["rmse_pos"]
         m["post_onset_peak"] = m["peak_pos"]
@@ -737,7 +832,12 @@ def report(out, rows, tol):
                 "accel_p95": agg([r["accel_p95"] for r in sub]),
                 "frac_fallback": agg([r["frac_fallback"] for r in sub]),
                 "post_onset_rmse": po,
-                "solve_ms_p95": agg([r["solve_ms_p95"] for r in sub])}
+                "solve_ms_p95": agg([r["solve_ms_p95"] for r in sub]),
+                "decision_ms_p50": agg([r["decision_ms_p50"] for r in sub]),
+                "decision_ms_p95": agg([r["decision_ms_p95"] for r in sub]),
+                "decision_ms_p99": agg([r["decision_ms_p99"] for r in sub]),
+                "decision_ms_max": agg([r["decision_ms_max"] for r in sub]),
+                "deadline_miss_rate": agg([r["deadline_miss_rate"] for r in sub])}
             print(f"{cond:11s} {METHOD_IDS[meth]:3s} {meth:17s} "
                   f"{po['mean']:7.3f}+-{po['sd']:<7.3f} "
                   f"{rm['mean']:10.3f} {pk['median']:9.2f} "
@@ -769,7 +869,12 @@ def report(out, rows, tol):
              ("full", "fallback_only", "M3-M5 MPC beyond fallback", False),
              ("full", "full_no_check", "M3-M4 post-allocation check", False),
              ("full", "adaptive_mpc", "M3-M6 vs adaptive baseline", False),
-             ("full", "zero_context", "M3-HW vs hardware comparator", False)]
+             ("full", "zero_context", "M3-HW vs hardware comparator", False),
+             # each declared departure from the manuscript, measured on its own
+             ("full", "no_alloc_aware",
+              "M3-M7 allocation-aware command selection", False),
+             ("full", "strict_first_action",
+              "M3-M8 allowance on the first-action condition", False)]
     eff = {}
     for a, b, label, is_primary in pairs:
         mark = "  <== PRIMARY" if is_primary else "  (exploratory)"

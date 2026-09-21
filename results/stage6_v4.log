@@ -1,0 +1,223 @@
+==============================================================================
+STAGE 6  method variants and the matched comparison table
+==============================================================================
+
+frozen supervision design: lambda=0.9888  lam0=0.95  w_effort=10000  |K|max=27.38
+  certificate nonempty at this design? False  -> the design below is OPERATIONAL supervision, not a certified region
+
+--- calibration pass (split 0, check disabled)
+     calib tol: 25/25 done in 5s (12 workers)
+     calib tol: 25/25 done in 5s (12 workers)
+    recovery tolerance   = 0.662 m  (p90 of zero-context healthy terminal error)
+     calib R,eta: 100/100 done in 74s (12 workers)
+     calib R,eta: 100/100 done in 74s (12 workers)
+    eligibility radius R = 63.113   (p95 of ||e||_P over 60000 calibration transitions)
+    one-step decrease condition is VIOLATED by the candidate in 67.0% of monitored steps
+    conformal eta at delta=0.025 would be 2.3339, which accepts ~97.5% and is therefore near-inert
+     calib eta: 160/160 done in 95s (12 workers)
+     calib eta: 160/160 done in 95s (12 workers)
+    eta selection on the calibration split:
+      eta= 0.0000  calib RMSE 1.8059  peak 2.501  reject 0.000
+      eta= 0.5000  calib RMSE 3.3777  peak 5.176  reject 0.000
+      eta= 1.0000  calib RMSE 1.2521  peak 2.326  reject 0.000
+      eta= 2.0000  calib RMSE 1.1331  peak 2.287  reject 0.000  <- selected
+      eta= 2.3339  calib RMSE 1.1388  peak 2.287  reject 0.000
+
+--- test grid: 5280 episodes (10 methods x 4 conditions x 60 matched seeds)
+     episodes: 5280/5280 done in 3075s (12 workers)
+     episodes: 5280/5280 done in 3075s (12 workers)
+
+==============================================================================
+MAIN COMPARISON TABLE
+(recovery tolerance 0.662 m, frozen on the calibration split; hold 2.1 s)
+==============================================================================
+TASK SPEC (declared in advance, fixed across methods): pos <= 0.15 m AND yaw <= 5 deg held for 2.1 s
+`draws` counts DISTINCT matched scenario draws; `roll` counts rollouts (draws x checkpoints).
+They are not the same number and only `draws` is an independent-sample count.
+
+condition   ID  method             post-onset RMSE  full RMSE  p-o peak     task  draws  roll   elig    sup
+-----------------------------------------------------------------------------------------------------------
+healthy     HW  zero_context        1.082+-0.153        1.082      2.00   3/60       60    60    nan  0.000
+healthy     M6  adaptive_mpc        1.236+-0.243        1.236      2.00   1/60       60    60    nan  0.000
+healthy     M0  nominal_recovery    0.855+-0.066        0.855      2.00  28/60       60    60  0.998  0.002
+healthy     M1  constant_context    0.887+-0.083        0.887      2.00  24/60       60    60  0.998  0.002
+healthy     M2  no_impact           0.794+-0.056        0.794      2.00 100/180      60   180  0.998  0.002
+healthy     M3  full                0.959+-0.364        0.959      2.00  60/180      60   180  0.987  0.013
+healthy     M4  full_no_check       0.959+-0.364        0.959      2.00  60/180      60   180  0.987  0.013
+healthy     M5  fallback_only       0.722+-0.031        0.722      2.00 105/180      60   180  0.998  0.002
+healthy     M7  no_alloc_aware      3.030+-1.181        3.030      5.42   0/180      60   180  0.518  0.482
+healthy     M8  strict_first_action   0.948+-0.262        0.948      2.00  55/180      60   180  0.994  0.006
+
+actuator    HW  zero_context        0.900+-0.202        1.066      1.54   3/60       60    60    nan  0.000
+actuator    M6  adaptive_mpc        1.178+-0.310        1.256      1.75   0/60       60    60    nan  0.000
+actuator    M0  nominal_recovery    0.551+-0.152        0.864      1.21  34/60       60    60  0.998  0.002
+actuator    M1  constant_context    0.591+-0.138        0.891      1.29  27/60       60    60  0.998  0.002
+actuator    M2  no_impact           0.453+-0.139        0.808      1.02 106/180      60   180  0.998  0.002
+actuator    M3  full                0.732+-0.448        0.978      1.38  63/180      60   180  0.986  0.014
+actuator    M4  full_no_check       0.732+-0.448        0.978      1.38  63/180      60   180  0.986  0.014
+actuator    M5  fallback_only       0.284+-0.091        0.729      0.68  99/180      60   180  0.998  0.002
+actuator    M7  no_alloc_aware      3.722+-1.512        3.241      6.07   0/180      60   180  0.494  0.506
+actuator    M8  strict_first_action   0.766+-0.540        1.001      1.36  57/180      60   180  0.982  0.018
+
+perception  HW  zero_context        1.521+-0.551        1.497      2.19   0/60       60    60    nan  0.000
+perception  M6  adaptive_mpc        1.974+-0.724        1.843      2.73   0/60       60    60    nan  0.000
+perception  M0  nominal_recovery    1.415+-0.856        1.430      1.67   0/60       60    60  0.870  0.130
+perception  M1  constant_context    1.600+-0.895        1.572      2.00   0/60       60    60  0.791  0.209
+perception  M2  no_impact           1.085+-0.668        1.185      1.41   1/180      60   180  0.928  0.072
+perception  M3  full                1.521+-0.800        1.508      1.87   0/180      60   180  0.810  0.190
+perception  M4  full_no_check       1.521+-0.800        1.508      1.87   0/180      60   180  0.810  0.190
+perception  M5  fallback_only       0.846+-0.291        1.001      1.25   6/180      60   180  0.972  0.028
+perception  M7  no_alloc_aware      3.126+-1.048        2.755      3.79   0/180      60   180  0.390  0.610
+perception  M8  strict_first_action   1.678+-0.987        1.633      1.95   1/180      60   180  0.771  0.229
+
+combined    HW  zero_context        1.420+-0.390        1.418      2.07   0/60       60    60    nan  0.000
+combined    M6  adaptive_mpc        1.813+-0.566        1.717      2.46   0/60       60    60    nan  0.000
+combined    M0  nominal_recovery    1.309+-0.846        1.351      1.55   0/60       60    60  0.880  0.120
+combined    M1  constant_context    1.317+-0.660        1.359      1.74   1/60       60    60  0.865  0.135
+combined    M2  no_impact           0.933+-0.370        1.071      1.27   4/180      60   180  0.938  0.062
+combined    M3  full                1.443+-0.777        1.452      1.69   0/180      60   180  0.808  0.192
+combined    M4  full_no_check       1.443+-0.777        1.452      1.69   0/180      60   180  0.808  0.192
+combined    M5  fallback_only       0.769+-0.263        0.954      1.20   9/180      60   180  0.973  0.027
+combined    M7  no_alloc_aware      3.354+-0.961        2.921      4.17   0/180      60   180  0.370  0.630
+combined    M8  strict_first_action   1.505+-0.834        1.500      1.75   0/180      60   180  0.790  0.210
+
+==============================================================================
+TABLE B  causal component comparisons (Sec 7.1 / 12)
+==============================================================================
+PRIMARY ENDPOINT, declared in advance: post-onset position RMSE,
+primary comparison M3 - M2 (behavioural supervision).
+Everything else below is exploratory and is labelled as such.
+
+
+  M3-M2  M3-M2 behavioural supervision  <== PRIMARY
+    healthy     d(post-onset RMSE) +0.1652 m  episode-CI [+0.1215, +0.2194]  *   crossed [+0.1068, +0.2757]
+                  60 distinct scenario draws, 180 rollouts
+    actuator    d(post-onset RMSE) +0.2787 m  episode-CI [+0.2208, +0.3545]  *   crossed [+0.1965, +0.3804]
+                  60 distinct scenario draws, 180 rollouts
+    perception  d(post-onset RMSE) +0.4357 m  episode-CI [+0.2998, +0.5692]  *   crossed [+0.2129, +0.6543]
+                  60 distinct scenario draws, 180 rollouts
+    combined    d(post-onset RMSE) +0.5104 m  episode-CI [+0.3697, +0.6628]  *   crossed [+0.3481, +0.6954]
+                  60 distinct scenario draws, 180 rollouts
+
+  M2-M1  M2-M1 changing context  (exploratory)
+    healthy     d(post-onset RMSE) -0.0933 m  episode-CI [-0.1091, -0.0779]  *
+                  60 distinct scenario draws, 180 rollouts, constant_context broadcast across seeds
+    actuator    d(post-onset RMSE) -0.1384 m  episode-CI [-0.1656, -0.1124]  *
+                  60 distinct scenario draws, 180 rollouts, constant_context broadcast across seeds
+    perception  d(post-onset RMSE) -0.5152 m  episode-CI [-0.7457, -0.3190]  *
+                  60 distinct scenario draws, 180 rollouts, constant_context broadcast across seeds
+    combined    d(post-onset RMSE) -0.3841 m  episode-CI [-0.5328, -0.2475]  *
+                  60 distinct scenario draws, 180 rollouts, constant_context broadcast across seeds
+
+  M3-M0  M3-M0 learned residual  (exploratory)
+    healthy     d(post-onset RMSE) +0.1038 m  episode-CI [+0.0609, +0.1574]  *
+                  60 distinct scenario draws, 180 rollouts, nominal_recovery broadcast across seeds
+    actuator    d(post-onset RMSE) +0.1808 m  episode-CI [+0.1226, +0.2568]  *
+                  60 distinct scenario draws, 180 rollouts, nominal_recovery broadcast across seeds
+    perception  d(post-onset RMSE) +0.1057 m  episode-CI [-0.1167, +0.3178]
+                  60 distinct scenario draws, 180 rollouts, nominal_recovery broadcast across seeds
+    combined    d(post-onset RMSE) +0.1346 m  episode-CI [-0.0452, +0.3179]
+                  60 distinct scenario draws, 180 rollouts, nominal_recovery broadcast across seeds
+
+  M3-M5  M3-M5 MPC beyond fallback  (exploratory)
+    healthy     d(post-onset RMSE) +0.2367 m  episode-CI [+0.1899, +0.2948]  *   crossed [+0.1830, +0.3403]
+                  60 distinct scenario draws, 180 rollouts
+    actuator    d(post-onset RMSE) +0.4475 m  episode-CI [+0.3854, +0.5281]  *   crossed [+0.3722, +0.5615]
+                  60 distinct scenario draws, 180 rollouts
+    perception  d(post-onset RMSE) +0.6753 m  episode-CI [+0.5543, +0.8085]  *   crossed [+0.5030, +0.8630]
+                  60 distinct scenario draws, 180 rollouts
+    combined    d(post-onset RMSE) +0.6745 m  episode-CI [+0.5262, +0.8406]  *   crossed [+0.5206, +0.8534]
+                  60 distinct scenario draws, 180 rollouts
+
+  M3-M4  M3-M4 post-allocation check  (exploratory)
+    healthy     d(post-onset RMSE) +0.0000 m  episode-CI [+0.0000, +0.0000]   crossed [+0.0000, +0.0000]
+                  60 distinct scenario draws, 180 rollouts
+    actuator    d(post-onset RMSE) +0.0000 m  episode-CI [+0.0000, +0.0000]   crossed [+0.0000, +0.0000]
+                  60 distinct scenario draws, 180 rollouts
+    perception  d(post-onset RMSE) +0.0000 m  episode-CI [+0.0000, +0.0000]   crossed [+0.0000, +0.0000]
+                  60 distinct scenario draws, 180 rollouts
+    combined    d(post-onset RMSE) +0.0000 m  episode-CI [+0.0000, +0.0000]   crossed [+0.0000, +0.0000]
+                  60 distinct scenario draws, 180 rollouts
+
+  M3-M6  M3-M6 vs adaptive baseline  (exploratory)
+    healthy     d(post-onset RMSE) -0.2764 m  episode-CI [-0.3365, -0.2147]  *
+                  60 distinct scenario draws, 180 rollouts, adaptive_mpc broadcast across seeds
+    actuator    d(post-onset RMSE) -0.4464 m  episode-CI [-0.5238, -0.3682]  *
+                  60 distinct scenario draws, 180 rollouts, adaptive_mpc broadcast across seeds
+    perception  d(post-onset RMSE) -0.4536 m  episode-CI [-0.6325, -0.2809]  *
+                  60 distinct scenario draws, 180 rollouts, adaptive_mpc broadcast across seeds
+    combined    d(post-onset RMSE) -0.3700 m  episode-CI [-0.5185, -0.2162]  *
+                  60 distinct scenario draws, 180 rollouts, adaptive_mpc broadcast across seeds
+
+  M3-HW  M3-HW vs hardware comparator  (exploratory)
+    healthy     d(post-onset RMSE) -0.1231 m  episode-CI [-0.1656, -0.0754]  *
+                  60 distinct scenario draws, 180 rollouts, zero_context broadcast across seeds
+    actuator    d(post-onset RMSE) -0.1685 m  episode-CI [-0.2249, -0.0987]  *
+                  60 distinct scenario draws, 180 rollouts, zero_context broadcast across seeds
+    perception  d(post-onset RMSE) -0.0002 m  episode-CI [-0.1265, +0.1339]
+                  60 distinct scenario draws, 180 rollouts, zero_context broadcast across seeds
+    combined    d(post-onset RMSE) +0.0230 m  episode-CI [-0.1242, +0.1786]
+                  60 distinct scenario draws, 180 rollouts, zero_context broadcast across seeds
+
+  M3-M7  M3-M7 allocation-aware command selection  (exploratory)
+    healthy     d(post-onset RMSE) -2.0704 m  episode-CI [-2.2722, -1.8651]  *   crossed [-2.4483, -1.6822]
+                  60 distinct scenario draws, 180 rollouts
+    actuator    d(post-onset RMSE) -2.9899 m  episode-CI [-3.2310, -2.7558]  *   crossed [-3.4984, -2.4874]
+                  60 distinct scenario draws, 180 rollouts
+    perception  d(post-onset RMSE) -1.6053 m  episode-CI [-1.8203, -1.3794]  *   crossed [-1.9899, -1.2310]
+                  60 distinct scenario draws, 180 rollouts
+    combined    d(post-onset RMSE) -1.9109 m  episode-CI [-2.1033, -1.7138]  *   crossed [-2.1417, -1.6515]
+                  60 distinct scenario draws, 180 rollouts
+
+  M3-M8  M3-M8 allowance on the first-action condition  (exploratory)
+    healthy     d(post-onset RMSE) +0.0107 m  episode-CI [-0.0172, +0.0488]   crossed [-0.0238, +0.0727]
+                  60 distinct scenario draws, 180 rollouts
+    actuator    d(post-onset RMSE) -0.0342 m  episode-CI [-0.0950, +0.0188]   crossed [-0.2023, +0.0867]
+                  60 distinct scenario draws, 180 rollouts
+    perception  d(post-onset RMSE) -0.1569 m  episode-CI [-0.3025, -0.0110]  *   crossed [-0.3675, +0.0496]
+                  60 distinct scenario draws, 180 rollouts
+    combined    d(post-onset RMSE) -0.0619 m  episode-CI [-0.1931, +0.0744]   crossed [-0.2681, +0.1139]
+                  60 distinct scenario draws, 180 rollouts
+
+==============================================================================
+SEED-LEVEL RMSE (protocol Sec 9.1: show seeds, not only pooled)
+==============================================================================
+method            condition         seed 0      seed 1      seed 2
+nominal_recovery  healthy           0.8554         -           -  
+nominal_recovery  actuator          0.8640         -           -  
+nominal_recovery  perception        1.4296         -           -  
+nominal_recovery  combined          1.3505         -           -  
+constant_context  healthy           0.8872         -           -  
+constant_context  actuator          0.8910         -           -  
+constant_context  perception        1.5723         -           -  
+constant_context  combined          1.3591         -           -  
+no_impact         healthy           0.8041      0.7784      0.7992
+no_impact         actuator          0.8189      0.7898      0.8156
+no_impact         perception        1.2284      1.1131      1.2128
+no_impact         combined          1.0578      1.0318      1.1227
+full              healthy           0.9171      1.0158      0.9446
+full              actuator          0.9648      0.9645      1.0044
+full              perception        1.4132      1.5390      1.5714
+full              combined          1.4664      1.4552      1.4336
+full_no_check     healthy           0.9171      1.0158      0.9446
+full_no_check     actuator          0.9648      0.9645      1.0044
+full_no_check     perception        1.4132      1.5390      1.5714
+full_no_check     combined          1.4664      1.4552      1.4336
+fallback_only     healthy           0.7224      0.7224      0.7224
+fallback_only     actuator          0.7285      0.7285      0.7285
+fallback_only     perception        1.0006      1.0006      1.0006
+fallback_only     combined          0.9537      0.9537      0.9537
+no_alloc_aware    healthy           3.3225      2.8303      2.9358
+no_alloc_aware    actuator          3.5711      2.8934      3.2590
+no_alloc_aware    perception        2.9272      2.6575      2.6793
+no_alloc_aware    combined          2.9602      2.8315      2.9704
+strict_first_action healthy           0.9305      0.9874      0.9275
+strict_first_action actuator          0.9421      1.0905      0.9710
+strict_first_action perception        1.5528      1.5881      1.7570
+strict_first_action combined          1.4582      1.5911      1.4516
+
+==============================================================================
+achieved-acceleration p95 across all healthy runs: 0.0534 +- 0.0066 m/s^2   (hardware band 0.025-0.063)
+  still inside the measured hardware band: True
+
+wrote results/stage6_methods.json (57.4 min)

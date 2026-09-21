@@ -58,7 +58,7 @@
   },
   "4.6c every step is accounted for by exactly one declared outcome": {
    "pass": true,
-   "detail": "of 120 steps: 31 candidate, 78 diverted by the eta-free first-action condition, 0 by the post-allocation decrease test, 10 by the command-admissibility budget, 0 by solver failure, 1 supervisor. A permissive eta cannot rescue the first-action condition by construction, which is why that share stays high; note the decrease test rejects 0, since a candidate that already passed the tighter eta-free condition passes it too."
+   "detail": "of 120 steps: 120 candidate, 0 diverted by the eta-free first-action condition, 0 by the post-allocation decrease test, 0 by the command-admissibility budget, 0 by solver failure, 0 supervisor. A permissive eta cannot rescue the first-action condition by construction, which is why that share stays high; note the decrease test rejects 0, since a candidate that already passed the tighter eta-free condition passes it too."
   },
   "4.6d candidate and fallback slacks are recorded separately": {
    "pass": true,
@@ -68,14 +68,22 @@
    "pass": true,
    "detail": "0 skips over 120 control steps with 2-3 trial allocations each; only the committed packet advances the schedule"
   },
+  "5.1a ordered recovery scoring on the prescribed synthetic traces": {
+   "pass": true,
+   "detail": "6 constructed traces (always inside; outside then return; leaves and never returns; leave then return; dwell-then-excursion; truncated window) agree with the declared ordering on every asserted field"
+  },
+  "5.1b a dwell before the excursion is not credited as reacquisition": {
+   "pass": true,
+   "detail": "a trace inside tolerance across onset for longer than the dwell and then permanently thrown out is recorded as mode=reacquisition, success=False, reason=no_qualifying_dwell_after_excursion. The reviewed scorer returned reacquired=True with recovery_time=0.0 on this trace, crediting a return before the departure it was recovering from."
+  },
   "6.1 interval enclosure not falsified by sampling": {
    "pass": true,
    "detail": "6600 sampled points: worst (|dA| - E_A) = +0.000e+00, worst (|dB| - E_B) = +0.000e+00; both must be <= 0. Passing does NOT certify the continuum, only that no counterexample was found (step, span 0.05)."
   }
  },
- "n_pass": 18,
- "n_checks": 18,
+ "n_pass": 20,
+ "n_checks": 20,
  "failures": [],
  "manifest_hash": "07f277768a04859a",
- "wall_time_s": 14.501393795013428
+ "wall_time_s": 15.561262607574463
 }

@@ -1,0 +1,32 @@
+{
+ "regions": [
+  {
+   "lam0": 0.96,
+   "w": 1000000.0,
+   "lam": 0.9774,
+   "R_max": 2.596,
+   "pos_cm": 8.970644456997743,
+   "vel_cm_s": 4.447261477723377,
+   "yaw_deg": 20.26074215260867
+  },
+  {
+   "lam0": 0.97,
+   "w": 1000000.0,
+   "lam": 0.9905,
+   "R_max": 4.432,
+   "pos_cm": 15.511435090806197,
+   "vel_cm_s": 5.687883417021264,
+   "yaw_deg": 35.793060201366465
+  }
+ ],
+ "first_reachable_thrust_N": 0.288,
+ "grid_spacing_N": 0.093,
+ "frac_of_authority": 0.3,
+ "steady_offset_cm_range": [
+  2.0,
+  9.0
+ ],
+ "task_tol_cm": 15.0,
+ "finding": "The certified region is nonempty only at radii smaller than the vehicle own actuator-quantisation limit cycle. The certified ball is at most ~9 cm of position error and ~4.5 cm/s of velocity error (pure-axis extremes; the region is their intersection and so jointly smaller), while the minimum-pulse deadband sustains a steady offset of 2-9 cm. The closed loop therefore cannot remain inside the region it certifies, which is why recovery-active coverage is ~0% and the numerical guarantee is not useful on this platform.",
+ "what_would_fix_it": "Finer thrust granularity: a smaller minimum impulse bit, a higher PWM rate, or proportional thrusters. The obstruction is actuator quantisation relative to the achievable per-step contraction, not the theory."
+}

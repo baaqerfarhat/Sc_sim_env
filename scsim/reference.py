@@ -204,9 +204,32 @@ TRAIN_FAMILIES = ("step", "smooth")
 TRANSFER_FAMILY = "transfer"
 
 
+class StationKeepReference(StepSetpointReference):
+    """Hold ONE setpoint for the whole episode, at a fixed heading.
+
+    This is the narrow operating case of Sec 11/C1: a bounded reference domain with an
+    exactly feasible feedforward. It matters for the certificate because the reference
+    defect bound b_r is what makes the swept region empty - the hardware-matched `step`
+    family contains a 1.0 m setpoint jump in a single 0.1 s sample, for which no bounded
+    input can follow the reference, and its defect measures b_r = 29.7 against an input
+    radius of 1.4. On this family the feedforward is exact and b_r = 0 identically.
+    """
+
+    name = "station_keep"
+
+    def update(self, x, k=None):
+        """No transition: the setpoint is held. Kept for interface compatibility."""
+
+    def final_target(self):
+        p = self.wp[0]
+        return np.array([p[0], p[1], 0.0, 0.0, self.psi_ref, 0.0])
+
+
 def make_reference(family, start=np.zeros(2), psi_ref=0.0):
     if family == "step":
         return StepSetpointReference(start, psi_ref)
+    if family == "station_keep":
+        return StationKeepReference(start, psi_ref)
     if family == "smooth":
         return SmoothFeasibleReference(start, psi_ref)
     if family == "transfer":

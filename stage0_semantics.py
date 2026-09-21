@@ -449,6 +449,82 @@ def sec6_enclosure_not_falsified():
           f"was found ({detail}).")
 
 
+def sec5_recovery_ordering():
+    """Sec 6.2: the four prescribed synthetic traces, plus the trace that produced the
+    false time-zero label in the reviewed scorer.
+
+    These are pure scoring checks on constructed membership sequences, so they need no
+    simulation and cannot be satisfied by a favourable physical outcome.
+    """
+    import stage6_methods as s6
+    hold, onset, n = 21, 20, 120
+
+    def trace(spec):
+        v = np.zeros(n, dtype=bool)
+        for lo, hi in spec:
+            v[lo:hi] = True
+        return v
+
+    cases = {
+        # 1. always inside: maintenance, never a reacquisition
+        "always_inside": (trace([(0, n)]),
+                          dict(mode="maintenance", success=True, maintained=True,
+                               excursion=False, reacquired=None, t_from_onset=0.0)),
+        # 2. outside at onset, then returns: reacquisition timed from onset itself
+        "outside_then_return": (trace([(0, 10), (60, n)]),
+                                dict(mode="reacquisition", success=True,
+                                     reacquired=True, excursion=True,
+                                     t_from_onset=4.0, t_from_excursion=4.0)),
+        # 3. inside, leaves, never returns: a recorded failure, not censoring
+        "leaves_no_return": (trace([(0, 40)]),
+                             dict(mode="reacquisition", success=False,
+                                  reacquired=False, excursion=True,
+                                  reason="no_qualifying_dwell_after_excursion")),
+        # 4. inside, leaves, returns and holds: reacquisition after the excursion
+        "leave_then_return": (trace([(0, 40), (70, n)]),
+                              dict(mode="reacquisition", success=True,
+                                   reacquired=True, excursion=True,
+                                   t_from_onset=5.0, t_from_excursion=3.0)),
+        # 5. THE REGRESSION TRACE. Inside across onset long enough to dwell, then
+        #    thrown out and never recovered. The old scorer found its dwell at t=onset,
+        #    saw a later excursion, and reported reacquired=True at recovery_time=0.
+        "dwell_then_excursion": (trace([(0, 60)]),
+                                 dict(mode="reacquisition", success=False,
+                                      reacquired=False, excursion=True)),
+        # 6. early stop: maintenance must NOT be inferred from missing samples
+        "truncated": (trace([(0, 30)])[:30],
+                      dict(mode="censored", success=False,
+                           reason="assessment_window_incomplete")),
+    }
+    bad = []
+    for name, (v, want) in cases.items():
+        got = s6.score_recovery(v, onset, hold)
+        for key, exp in want.items():
+            if isinstance(exp, float):
+                okv = np.isclose(got[key], exp)
+            else:
+                okv = got[key] == exp
+            if not okv:
+                bad.append(f"{name}.{key}: got {got[key]!r} want {exp!r}")
+    # the specific regression, stated explicitly
+    reg = s6.score_recovery(cases["dwell_then_excursion"][0], onset, hold)
+    reg_ok = not (reg["reacquired"] and reg["t_from_onset"] == 0.0)
+    check("5.1a ordered recovery scoring on the prescribed synthetic traces",
+          not bad,
+          f"{len(cases)} constructed traces (always inside; outside then return; "
+          f"leaves and never returns; leave then return; dwell-then-excursion; "
+          f"truncated window) agree with the declared ordering on every asserted "
+          f"field" + ("" if not bad else "; mismatches: " + "; ".join(bad)))
+    check("5.1b a dwell before the excursion is not credited as reacquisition",
+          reg_ok,
+          "a trace inside tolerance across onset for longer than the dwell and then "
+          "permanently thrown out is recorded as "
+          f"mode={reg['mode']}, success={reg['success']}, reason={reg['reason']}. "
+          "The reviewed scorer returned reacquired=True with recovery_time=0.0 on "
+          "this trace, crediting a return before the departure it was recovering "
+          "from.")
+
+
 def main():
     t0 = time.time()
     print("=" * 78)
@@ -472,6 +548,9 @@ def main():
 
     print("\n--- Section 4.6: controller selection semantics ---")
     sec4_selection_semantics()
+
+    print("\n--- Section 5.1/6.2: recovery scoring order ---")
+    sec5_recovery_ordering()
 
     print("\n--- Section 6.1: interval enclosure soundness ---")
     sec6_enclosure_not_falsified()

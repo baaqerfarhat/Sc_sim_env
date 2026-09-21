@@ -1,6 +1,6 @@
 # Response to the RA-L results retention and completion plan
 
-Run `v3-contract-and-ablation` · commit `a9ca1172` · config `07f277768a04859a`
+Run `v4-architecture-repair` · commit `81f52657` · config `07f277768a04859a`
 
 Responding to [`RAL_Updated_Results_Retention_and_Completion_Plan.md`](RAL_Updated_Results_Retention_and_Completion_Plan.md), section by section, using that document's numbering. Full evidence is in [`results.md`](results.md).
 
@@ -56,11 +56,11 @@ accurate; it is simply no longer the current campaign.
 
 | Comparison | Plan's framing | Current result | Conclusion |
 |---|---|---|---|
-| §3.1 behavioural supervision (M3-M2) | adverse, all four point estimates against it | +0.045 to +0.138 m, significantly worse in 4/4 | **kept: no demonstrated benefit** |
-| §3.2 changing context (M2-M1) | most promising result | -0.437 to -0.065 m, better in 4/4 | **kept: supported** |
-| §3.3 MPC beyond fallback (M3-M5) | preserve the adverse outcome | -0.033 to +0.066 m | **kept: no demonstrated improvement** |
-| §3.4 practical performance | low success, fix the endpoint | 107/3840 rollouts now scored at the **final** waypoint | **kept: poor** |
-| §3.5 transfer | preserve the failure | learned 4.8-5.1 m vs zero-context 0.37-1.30 m on the held-out family | **kept: fails badly** |
+| §3.1 behavioural supervision (M3-M2) | adverse, all four point estimates against it | +0.165 to +0.510 m, significantly worse in 4/4 | **kept: no demonstrated benefit** |
+| §3.2 changing context (M2-M1) | most promising result | -0.515 to -0.093 m, better in 4/4 | **kept: supported** |
+| §3.3 MPC beyond fallback (M3-M5) | preserve the adverse outcome | +0.237 to +0.675 m | **kept: no demonstrated improvement** |
+| §3.4 practical performance | low success, fix the endpoint | 910/5280 rollouts now scored at the **final** waypoint | **kept: poor** |
+| §3.5 transfer | preserve the failure | learned 0.4-1.0 m vs zero-context 0.37-1.30 m on the held-out family | **kept: fails badly** |
 
 The one comparison whose **conclusion reversed** is the post-allocation check; see §4.2.
 
@@ -117,7 +117,7 @@ decrease test is disabled".
 The reason is structural rather than numerical. The first-action condition is the *same*
 inequality without the eta allowance, hence strictly tighter, so any candidate that survives
 it passes the decrease test automatically. In monitor mode, where the first-action condition
-is not enforced, the decrease condition is violated by **90.1%** of raw candidates - so the test is not
+is not enforced, the decrease condition is violated by **67.0%** of raw candidates - so the test is not
 vacuous in itself, it is **redundant given the screening that precedes it**.
 
 Two further consequences the plan asked us not to paper over:
@@ -159,8 +159,8 @@ both the state radius and a fallback that passes its own check.
 **Diagnosed rather than tuned away.** The plan warns against making the acceptance test
 permissive to raise the MPC action share. We did not, and the decomposition now shows why
 that would not have worked: the binding mechanism is the first-action condition at
-24%-41% of steps, which carries **no eta** and cannot be relaxed by any choice of eta. The MPC
-candidate is transmitted on only 8%-13% of samples.
+0%-0% of steps, which carries **no eta** and cannot be relaxed by any choice of eta. The MPC
+candidate is transmitted on only 81%-99% of samples.
 
 **Outstanding.** Predicted-state region membership (e_i in C, e_N in C) is not independently
 verified across the horizon; the verified model/context/reference/allocator domains and the
@@ -184,10 +184,10 @@ pseudo-Huber objective of Eq. (16) is not implemented as such.
 
 | Condition | candidate | fb: first-action | fb: decrease | fb: budget | fb: solver | supervisor | sum |
 |---|---|---|---|---|---|---|---|
-| healthy | 0.097 | 0.244 | 0.000 | 0.035 | 0.000 | 0.624 | 1.000 |
-| actuator | 0.077 | 0.240 | 0.000 | 0.027 | 0.000 | 0.657 | 1.000 |
-| perception | 0.121 | 0.412 | 0.000 | 0.044 | 0.000 | 0.423 | 1.000 |
-| combined | 0.127 | 0.411 | 0.000 | 0.042 | 0.000 | 0.420 | 1.000 |
+| healthy | 0.987 | 0.000 | 0.000 | 0.000 | 0.000 | 0.013 | 1.000 |
+| actuator | 0.986 | 0.000 | 0.000 | 0.000 | 0.000 | 0.014 | 1.000 |
+| perception | 0.810 | 0.000 | 0.000 | 0.000 | 0.000 | 0.190 | 1.000 |
+| combined | 0.808 | 0.000 | 0.000 | 0.000 | 0.000 | 0.192 | 1.000 |
 
 **Outstanding.** `solve_ms` still records only the QP solver's reported duration, not full
 decision latency including context inference, feedforward and the checks, and deadline status
@@ -223,7 +223,7 @@ inflated by it. We report that rather than implying the fix was consequential.
 
 ### §5.2 Diagnose supervisor dominance on a small development set — **NOT IMPLEMENTED**
 
-The phenomenon is quantified but not diagnosed. The fixed supervisor issues 42%-66% of
+The phenomenon is quantified but not diagnosed. The fixed supervisor issues 1%-19% of
 transmitted actions, and the decomposition in §4.5 now separates the reasons candidates are
 not used. What does **not** exist is the prescribed per-scenario diagnostic: the five-panel
 plots over a few pre-specified development episodes, the identification of where progress
@@ -256,11 +256,11 @@ HW the hardware-matched comparator, plus adaptive MPC.
 
 | Primary pair | Question | Current result |
 |---|---|---|
-| M2-M1 changing context | | -0.437 to -0.065 m; better 4/4, worse 0/4 |
-| M3-M2 behavioural supervision | | +0.045 to +0.138 m; better 0/4, worse 4/4 |
+| M2-M1 changing context | | -0.515 to -0.093 m; better 4/4, worse 0/4 |
+| M3-M2 behavioural supervision | | +0.165 to +0.510 m; better 0/4, worse 4/4 |
 | M3-M4 the allocated-command check | | +0.000 to +0.000 m; better 0/4, worse 0/4 |
-| M3-M5 MPC beyond the same fallback | | -0.033 to +0.066 m; better 0/4, worse 1/4 |
-| M3-M0 learned prediction | | -0.293 to -0.026 m; better 2/4, worse 0/4 |
+| M3-M5 MPC beyond the same fallback | | +0.237 to +0.675 m; better 0/4, worse 4/4 |
+| M3-M0 learned prediction | | +0.104 to +0.181 m; better 0/4, worse 2/4 |
 
 **Caveats we are not hiding.** M3-M5 is not yet the matched comparison the plan specifies,
 because §4.3 is outstanding and the fallback's feedforward is still nominal and
@@ -351,10 +351,10 @@ Rather than pick one, both are now run. The previous grid started at 12 and neve
 
 | Condition | dRMSE (manuscript - build spec), m | 95% interval | significant? |
 |---|---:|---:|---|
-| healthy | -0.0138 | [-0.0730, +0.0491] | no |
-| combined | +0.0118 | [-0.1512, +0.1457] | no |
+| healthy | -0.0068 | [-0.0321, +0.0194] | no |
+| combined | +0.0709 | [-0.1917, +0.3537] | no |
 
-Largest difference **0.0138 m**, against the 0.05-0.6 m effects under discussion elsewhere. So
+Largest difference **0.0709 m**, against the 0.05-0.6 m effects under discussion elsewhere. So
 **no conclusion in this study depends on resolving the discrepancy** - though it should still
 be resolved before the horizon is quoted as a fact about the hardware. Hardware results remain
 the primary physical evidence and simulation repairs do not alter recorded hardware data.
@@ -375,8 +375,8 @@ check, fallback and supervisor is **not** yet drawn.
 The plan enumerates outcomes; on current evidence this is the **"dynamic context helps but
 behavioural supervision does not"** branch, with two aggravating findings.
 
-- Changing context helps: -0.437 to -0.065 m, significant in 4/4.
-- Behavioural supervision does not: +0.045 to +0.138 m, worse in 4/4, and the pre-declared grid selected zero.
+- Changing context helps: -0.515 to -0.093 m, significant in 4/4.
+- Behavioural supervision does not: +0.165 to +0.510 m, worse in 4/4, and the pre-declared grid selected zero.
 - The Eq. (18) post-allocation check contributes **exactly nothing** once isolated.
 - No useful recovery certificate exists, so practical recovery certification is unvalidated.
 
@@ -390,7 +390,7 @@ simulation's own contribution is now partly **negative evidence**: two mechanism
 presents as load-bearing are measurably not.
 
 One framing point that follows from §4.5 and is worth putting in front of a reviewer before
-they find it: under M3 the fixed supervisor issues 42%-66% of transmitted actions and the MPC
+they find it: under M3 the fixed supervisor issues 1%-19% of transmitted actions and the MPC
 candidate reaches the actuators on a small minority of samples. What the comparison table
 scores is therefore largely a fixed feedback law rather than context-conditioned MPC. That
 has to be stated plainly in any claim about the controller.
