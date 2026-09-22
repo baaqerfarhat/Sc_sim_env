@@ -1,0 +1,733 @@
+{
+ "counts": {
+  "adaptive_mpc": {
+   "id": "M6",
+   "n_rollouts": 240,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0
+   ],
+   "n_checkpoints_evaluated": 1,
+   "rollouts_per_scenario": 1.0,
+   "checkpoint_independent": true
+  },
+  "constant_context": {
+   "id": "M1",
+   "n_rollouts": 240,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0
+   ],
+   "n_checkpoints_evaluated": 1,
+   "rollouts_per_scenario": 1.0,
+   "checkpoint_independent": false
+  },
+  "fallback_only": {
+   "id": "M5",
+   "n_rollouts": 720,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0,
+    1,
+    2
+   ],
+   "n_checkpoints_evaluated": 3,
+   "rollouts_per_scenario": 3.0,
+   "checkpoint_independent": true
+  },
+  "full": {
+   "id": "M3",
+   "n_rollouts": 720,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0,
+    1,
+    2
+   ],
+   "n_checkpoints_evaluated": 3,
+   "rollouts_per_scenario": 3.0,
+   "checkpoint_independent": false
+  },
+  "full_no_check": {
+   "id": "M4",
+   "n_rollouts": 720,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0,
+    1,
+    2
+   ],
+   "n_checkpoints_evaluated": 3,
+   "rollouts_per_scenario": 3.0,
+   "checkpoint_independent": false
+  },
+  "no_alloc_aware": {
+   "id": "M7",
+   "n_rollouts": 720,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0,
+    1,
+    2
+   ],
+   "n_checkpoints_evaluated": 3,
+   "rollouts_per_scenario": 3.0,
+   "checkpoint_independent": false
+  },
+  "no_impact": {
+   "id": "M2",
+   "n_rollouts": 720,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0,
+    1,
+    2
+   ],
+   "n_checkpoints_evaluated": 3,
+   "rollouts_per_scenario": 3.0,
+   "checkpoint_independent": false
+  },
+  "nominal_recovery": {
+   "id": "M0",
+   "n_rollouts": 240,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0
+   ],
+   "n_checkpoints_evaluated": 1,
+   "rollouts_per_scenario": 1.0,
+   "checkpoint_independent": true
+  },
+  "strict_first_action": {
+   "id": "M8",
+   "n_rollouts": 720,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0,
+    1,
+    2
+   ],
+   "n_checkpoints_evaluated": 3,
+   "rollouts_per_scenario": 3.0,
+   "checkpoint_independent": false
+  },
+  "zero_context": {
+   "id": "HW",
+   "n_rollouts": 240,
+   "n_unique_scenarios": 240,
+   "model_seeds_evaluated": [
+    0
+   ],
+   "n_checkpoints_evaluated": 1,
+   "rollouts_per_scenario": 1.0,
+   "checkpoint_independent": true
+  }
+ },
+ "deduplication": {
+  "adaptive_mpc": {
+   "n_seeds": 1,
+   "identical": null,
+   "n_unique_outcomes": 240
+  },
+  "constant_context": {
+   "n_seeds": 1,
+   "identical": null,
+   "n_unique_outcomes": 240
+  },
+  "fallback_only": {
+   "n_seeds": 3,
+   "max_spread": 0.0,
+   "identical": true,
+   "n_unique_outcomes": 240,
+   "archived_rollouts": 720,
+   "inflation_factor": 3.0
+  },
+  "full": {
+   "n_seeds": 3,
+   "max_spread": 3.8823036312489236,
+   "identical": false,
+   "n_unique_outcomes": 240,
+   "archived_rollouts": 720,
+   "inflation_factor": 3.0
+  },
+  "full_no_check": {
+   "n_seeds": 3,
+   "max_spread": 3.8823036312489236,
+   "identical": false,
+   "n_unique_outcomes": 240,
+   "archived_rollouts": 720,
+   "inflation_factor": 3.0
+  },
+  "no_alloc_aware": {
+   "n_seeds": 3,
+   "max_spread": 4.682053645375957,
+   "identical": false,
+   "n_unique_outcomes": 240,
+   "archived_rollouts": 720,
+   "inflation_factor": 3.0
+  },
+  "no_impact": {
+   "n_seeds": 3,
+   "max_spread": 2.5431633898447816,
+   "identical": false,
+   "n_unique_outcomes": 240,
+   "archived_rollouts": 720,
+   "inflation_factor": 3.0
+  },
+  "nominal_recovery": {
+   "n_seeds": 1,
+   "identical": null,
+   "n_unique_outcomes": 240
+  },
+  "strict_first_action": {
+   "n_seeds": 3,
+   "max_spread": 4.8088766229799855,
+   "identical": false,
+   "n_unique_outcomes": 240,
+   "archived_rollouts": 720,
+   "inflation_factor": 3.0
+  },
+  "zero_context": {
+   "n_seeds": 1,
+   "identical": null,
+   "n_unique_outcomes": 240
+  }
+ },
+ "m1_coverage": {
+  "trained": [
+   0,
+   1,
+   2
+  ],
+  "evaluated": [
+   0
+  ]
+ },
+ "contrast_signs": {
+  "no_impact-constant_context": {
+   "label": "M2-M1 changing context",
+   "per_condition": {
+    "actuator": {
+     "mean": -0.13835568716064828,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    },
+    "combined": {
+     "mean": -0.3840992809528657,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    },
+    "healthy": {
+     "mean": -0.09329072985678637,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    },
+    "perception": {
+     "mean": -0.5151830447628593,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    }
+   },
+   "saved_intervals": {
+    "actuator": {
+     "mean": -0.13835568716064828,
+     "lo": -0.16555057663018488,
+     "hi": -0.11241090222973492,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": "constant_context"
+    },
+    "combined": {
+     "mean": -0.3840992809528657,
+     "lo": -0.53277556537448,
+     "hi": -0.24754832010220268,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": "constant_context"
+    },
+    "healthy": {
+     "mean": -0.09329072985678637,
+     "lo": -0.10908178171049822,
+     "hi": -0.07793217523124849,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": "constant_context"
+    },
+    "perception": {
+     "mean": -0.5151830447628593,
+     "lo": -0.7456703864010076,
+     "hi": -0.3189853388863308,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": "constant_context"
+    }
+   }
+  },
+  "full-no_impact": {
+   "label": "M3-M2 behavioural loss",
+   "per_condition": {
+    "actuator": {
+     "mean": 0.2786766237463739,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    },
+    "combined": {
+     "mean": 0.5103631877921473,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    },
+    "healthy": {
+     "mean": 0.1652285688422657,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    },
+    "perception": {
+     "mean": 0.43574731513369686,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours no_impact"
+    }
+   },
+   "saved_intervals": {
+    "actuator": {
+     "mean": 0.2786766237463739,
+     "lo": 0.2207627992727303,
+     "hi": 0.3545183385863406,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "combined": {
+     "mean": 0.5103631877921473,
+     "lo": 0.36969406365748453,
+     "hi": 0.6627811958199494,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "healthy": {
+     "mean": 0.1652285688422657,
+     "lo": 0.12146205320162781,
+     "hi": 0.21943496936915188,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "perception": {
+     "mean": 0.43574731513369686,
+     "lo": 0.2997971555621558,
+     "hi": 0.5691839448115664,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    }
+   }
+  },
+  "no_impact-fallback_only": {
+   "label": "M2-M5 learned MPC vs feedback",
+   "per_condition": {
+    "actuator": {
+     "mean": 0.16881712647763342,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours fallback_only"
+    },
+    "combined": {
+     "mean": 0.16409839930470732,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours fallback_only"
+    },
+    "healthy": {
+     "mean": 0.071507510209212,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours fallback_only"
+    },
+    "perception": {
+     "mean": 0.2395088088124565,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours fallback_only"
+    }
+   },
+   "saved_intervals": {
+    "actuator": {
+     "mean": 0.16881712647763342,
+     "lo": 0.15190897339149048,
+     "hi": 0.1875069461648045,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "combined": {
+     "mean": 0.16409839930470732,
+     "lo": 0.09690647519793655,
+     "hi": 0.235839741614883,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "healthy": {
+     "mean": 0.071507510209212,
+     "lo": 0.06356254484404256,
+     "hi": 0.08013271342105904,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "perception": {
+     "mean": 0.2395088088124565,
+     "lo": 0.13080859506627385,
+     "hi": 0.3656378422776417,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    }
+   }
+  },
+  "full-full_no_check": {
+   "label": "M3-M4 repeated check",
+   "per_condition": {
+    "actuator": {
+     "mean": 0.0,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours full_no_check"
+    },
+    "combined": {
+     "mean": 0.0,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours full_no_check"
+    },
+    "healthy": {
+     "mean": 0.0,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours full_no_check"
+    },
+    "perception": {
+     "mean": 0.0,
+     "n_rollout_pairs": 180,
+     "n_unique_scenarios": 60,
+     "sign": "favours full_no_check"
+    }
+   },
+   "saved_intervals": {
+    "actuator": {
+     "mean": 0.0,
+     "lo": 0.0,
+     "hi": 0.0,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "combined": {
+     "mean": 0.0,
+     "lo": 0.0,
+     "hi": 0.0,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "healthy": {
+     "mean": 0.0,
+     "lo": 0.0,
+     "hi": 0.0,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    },
+    "perception": {
+     "mean": 0.0,
+     "lo": 0.0,
+     "hi": 0.0,
+     "n_pairs": 180,
+     "n_blocks": 60,
+     "level": "episode, CONDITIONAL on the evaluated checkpoints",
+     "n_distinct_scenarios": 60,
+     "n_rollouts": 180,
+     "broadcast_side": null
+    }
+   }
+  }
+ },
+ "m3_m2_crossed": {
+  "healthy": {
+   "mean": 0.1652285688422657,
+   "lo": 0.10680509512947027,
+   "hi": 0.2757274437752916,
+   "n_seeds": 3,
+   "n_distinct_scenarios": 60,
+   "per_seed_mean": {
+    "0": 0.11295909456368544,
+    "1": 0.2373938121840888,
+    "2": 0.1453327997790229
+   },
+   "level": "crossed over training seeds AND episodes"
+  },
+  "actuator": {
+   "mean": 0.2786766237463739,
+   "lo": 0.19650088090467804,
+   "hi": 0.3804483024716791,
+   "n_seeds": 3,
+   "n_distinct_scenarios": 60,
+   "per_seed_mean": {
+    "0": 0.2366609938271068,
+    "1": 0.30409871027863183,
+    "2": 0.2952701671333831
+   },
+   "level": "crossed over training seeds AND episodes"
+  },
+  "perception": {
+   "mean": 0.43574731513369686,
+   "lo": 0.21289263950592174,
+   "hi": 0.6543421597294922,
+   "n_seeds": 3,
+   "n_distinct_scenarios": 60,
+   "per_seed_mean": {
+    "0": 0.26148574279471287,
+    "1": 0.5801593251706461,
+    "2": 0.4655968774357315
+   },
+   "level": "crossed over training seeds AND episodes"
+  },
+  "combined": {
+   "mean": 0.5103631877921473,
+   "lo": 0.3480949114896248,
+   "hi": 0.6954112295182509,
+   "n_seeds": 3,
+   "n_distinct_scenarios": 60,
+   "per_seed_mean": {
+    "0": 0.5500148668131905,
+    "1": 0.5646108585922891,
+    "2": 0.416463837970962
+   },
+   "level": "crossed over training seeds AND episodes"
+  }
+ },
+ "m3_m4": {
+  "per_condition_difference": {
+   "healthy": 0.0,
+   "actuator": 0.0,
+   "perception": 0.0,
+   "combined": 0.0
+  },
+  "rejection_rates": {
+   "full": {
+    "mean_frac_reject": 0.0,
+    "total_would_reject": null
+   },
+   "full_no_check": {
+    "mean_frac_reject": NaN,
+    "total_would_reject": null
+   }
+  }
+ },
+ "counter_reconciliation": {
+  "full": {
+   "id": "M3",
+   "n_steps": 432000,
+   "counters": {
+    "frac_reject": 0.0,
+    "frac_gate_on": 0.8978495370370371,
+    "frac_fallback": 0.0,
+    "action_src_sum": 1.0
+   },
+   "source_shares": {
+    "candidate": 0.8978495370370371,
+    "fallback_first_action": 0.0,
+    "fallback_checked": 0.0,
+    "fallback_inadmissible": 0.0,
+    "fallback_solver_fail": 0.0,
+    "unchecked_solver_fallback": 0.0,
+    "fallback_only": 0.0,
+    "supervisor": 0.10215046296296294
+   },
+   "share_sum": 1.0
+  },
+  "no_impact": {
+   "id": "M2",
+   "n_steps": 432000,
+   "counters": {
+    "frac_reject": 0.0,
+    "frac_gate_on": 0.9651782407407407,
+    "frac_fallback": 0.0005,
+    "action_src_sum": 1.0
+   },
+   "source_shares": {
+    "candidate": 0.9646782407407406,
+    "fallback_first_action": 0.0,
+    "fallback_checked": 0.0,
+    "fallback_inadmissible": 0.0,
+    "fallback_solver_fail": 0.0005,
+    "unchecked_solver_fallback": 0.0,
+    "fallback_only": 0.0,
+    "supervisor": 0.03482175925925926
+   },
+   "share_sum": 0.9999999999999998
+  },
+  "constant_context": {
+   "id": "M1",
+   "n_steps": 144000,
+   "counters": {
+    "frac_reject": 0.0,
+    "frac_gate_on": 0.9126805555555555,
+    "frac_fallback": 0.0,
+    "action_src_sum": 1.0
+   },
+   "source_shares": {
+    "candidate": 0.9126805555555555,
+    "fallback_first_action": 0.0,
+    "fallback_checked": 0.0,
+    "fallback_inadmissible": 0.0,
+    "fallback_solver_fail": 0.0,
+    "unchecked_solver_fallback": 0.0,
+    "fallback_only": 0.0,
+    "supervisor": 0.08731944444444446
+   },
+   "share_sum": 1.0
+  },
+  "nominal_recovery": {
+   "id": "M0",
+   "n_steps": 144000,
+   "counters": {
+    "frac_reject": 0.0,
+    "frac_gate_on": 0.9364027777777777,
+    "frac_fallback": 0.0,
+    "action_src_sum": 1.0
+   },
+   "source_shares": {
+    "candidate": 0.9364027777777777,
+    "fallback_first_action": 0.0,
+    "fallback_checked": 0.0,
+    "fallback_inadmissible": 0.0,
+    "fallback_solver_fail": 0.0,
+    "unchecked_solver_fallback": 0.0,
+    "fallback_only": 0.0,
+    "supervisor": 0.06359722222222222
+   },
+   "share_sum": 0.9999999999999999
+  },
+  "fallback_only": {
+   "id": "M5",
+   "n_steps": 432000,
+   "counters": {
+    "frac_reject": 0.0,
+    "frac_gate_on": 0.9851388888888888,
+    "frac_fallback": 0.0,
+    "action_src_sum": 1.0
+   },
+   "source_shares": {
+    "candidate": 0.0,
+    "fallback_first_action": 0.0,
+    "fallback_checked": 0.0,
+    "fallback_inadmissible": 0.0,
+    "fallback_solver_fail": 0.0,
+    "unchecked_solver_fallback": 0.0,
+    "fallback_only": 0.9851388888888888,
+    "supervisor": 0.014861111111111113
+   },
+   "share_sum": 0.9999999999999999
+  }
+ },
+ "glossary": {
+  "first screen": "the Eq. (15) first-action decrease condition, evaluated on the nominal-equivalent TRANSMITTED command before transmission",
+  "repeated decrease check": "the Eq. (18) post-allocation acceptance test, evaluated on the same quantity after allocation. Redundant under the first screen once both carry the same allowance.",
+  "finite proposal repair": "the bounded search over proposal seeds (raw MPC, projected MPC, P-optimal wrench, feedback) plus one Newton step on the known allocation map",
+  "continuous projection": "exact projection of the MPC first action onto the first-screen feasible set; a COMPONENT of repair, not a synonym for it",
+  "allocation compensation": "the Newton step on the allocation map; also a component of repair",
+  "operational eligibility": "the pre-action test that the state is inside the calibrated radius R and a passing fallback exists",
+  "supervisor": "the fixed velocity/rate damping controller used when eligibility fails. NOT a safety guarantee."
+ },
+ "preserved": {
+  "lambda_I_selected_on_dev": 0.0,
+  "selection_metric": "dev one-step weighted MSE",
+  "selected_on": "dev split, seed 0, before any test run",
+  "consequence": "M2 is the SELECTED method and M3 is a labelled ablation. This was decided on development data before any test run and is preserved unchanged in Path B."
+ },
+ "stage": "pathb1_reanalysis",
+ "n_archived_rollouts": 5280,
+ "source_manifest_hash": "07f277768a04859a",
+ "status": "HISTORICAL: motivation only, never pooled with Path B",
+ "findings": [
+  {
+   "finding": "Deterministic methods were evaluated at several seed indices that produced BITWISE identical outcomes.",
+   "detail": "Affected: ['M5']. Each contributes 240 independent scenario outcomes, not\n720. The archived 5,280-rollout figure is a ROLLOUT count and must not be\nread as a sample size. Path B runs these methods once per scenario."
+  },
+  {
+   "finding": "M1 training coverage and M1 evaluation coverage are different numbers.",
+   "detail": "Stage 5 trained constant-context seeds [0, 1, 2]; Stage 6 evaluated only seeds [0].\nThe archived M2-M1 comparison therefore rests on a SINGLE M1 checkpoint against three\nM2 checkpoints, so it carries no M1 training variability at all. Path B evaluates five\nseeds on both sides."
+  },
+  {
+   "finding": "Resolved: the report's claim that the seed-crossed M3-M2 intervals include zero is WRONG about its own artefact.",
+   "detail": "Recomputed from the saved intervals: strictly positive in ['healthy', 'actuator', 'perception', 'combined']; containing zero in\nno condition. A strictly positive M3-M2 interval means the behavioural-loss model is\nsignificantly WORSE, which is a stronger adverse finding than the text stated, not a\nweaker one. Path B reports M3 as an adverse ablation on that basis."
+  },
+  {
+   "finding": "Resolved: the post-allocation acceptance check is NOT load-bearing; it is redundant under the screen that precedes it.",
+   "detail": "Recomputed M3-M4 post-onset RMSE differences by condition: {'healthy': 0.0, 'actuator': 0.0, 'perception': 0.0, 'combined': 0.0}.\nEvery one is exactly zero, and the enabled check's rejection rate is 0.0000.\nThe reason is structural: once the first-action condition carries the same allowance, the\ntwo tests are the same inequality on the same quantity, so a candidate that passes the\nfirst cannot fail the second. Path B therefore describes the component as redundant,\nnot beneficial, and claims no performance effect for it."
+  },
+  {
+   "finding": "The archived action-source shares are complete and sum to one.",
+   "detail": "Checked on every learned method: deviations none. This was NOT true of the\nfirst campaign, whose reported decomposition omitted the first-action path and left\n24-41% of steps unattributed. Path B keeps the property and extends the taxonomy from 8\nlabels to the 12 mutually exclusive labels of Sec 8.4."
+  },
+  {
+   "finding": "Terminology is fixed once and used consistently from here on.",
+   "detail": "first screen: the Eq. (15) first-action decrease condition, evaluated on the nominal-equivalent TRANSMITTED command before transmission\nrepeated decrease check: the Eq. (18) post-allocation acceptance test, evaluated on the same quantity after allocation. Redundant under the first screen once both carry the same allowance.\nfinite proposal repair: the bounded search over proposal seeds (raw MPC, projected MPC, P-optimal wrench, feedback) plus one Newton step on the known allocation map\ncontinuous projection: exact projection of the MPC first action onto the first-screen feasible set; a COMPONENT of repair, not a synonym for it\nallocation compensation: the Newton step on the allocation map; also a component of repair\noperational eligibility: the pre-action test that the state is inside the calibrated radius R and a passing fallback exists\nsupervisor: the fixed velocity/rate damping controller used when eligibility fails. NOT a safety guarantee."
+  }
+ ],
+ "wall_time_s": 0.2140636444091797
+}

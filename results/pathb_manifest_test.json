@@ -1,0 +1,2419 @@
+{
+ "block": "test",
+ "n_per_cell": 60,
+ "families": [
+  "step",
+  "smooth_dock"
+ ],
+ "conditions": [
+  "healthy",
+  "actuator",
+  "perception",
+  "combined"
+ ],
+ "n_units": 480,
+ "sha256": "01d416add89f07818ce837a29fbfa07b9d34b0b8703b02d436baf2aa58a0cf2d",
+ "population_sha256": "b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634",
+ "units": [
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800000
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800001
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800002
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800003
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800004
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800005
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800006
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800007
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800008
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800009
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800010
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800011
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800012
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800013
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800014
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800015
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800016
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800017
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800018
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800019
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800020
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800021
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800022
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800023
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800024
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800025
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800026
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800027
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800028
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800029
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800030
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800031
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800032
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800033
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800034
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800035
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800036
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800037
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800038
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800039
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800040
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800041
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800042
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800043
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800044
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800045
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800046
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800047
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800048
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800049
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800050
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800051
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800052
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800053
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800054
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800055
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800056
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800057
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800058
+  },
+  {
+   "family": "step",
+   "condition": "healthy",
+   "ep_seed": 800059
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800000
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800001
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800002
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800003
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800004
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800005
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800006
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800007
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800008
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800009
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800010
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800011
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800012
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800013
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800014
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800015
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800016
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800017
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800018
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800019
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800020
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800021
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800022
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800023
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800024
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800025
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800026
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800027
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800028
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800029
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800030
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800031
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800032
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800033
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800034
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800035
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800036
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800037
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800038
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800039
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800040
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800041
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800042
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800043
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800044
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800045
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800046
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800047
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800048
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800049
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800050
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800051
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800052
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800053
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800054
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800055
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800056
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800057
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800058
+  },
+  {
+   "family": "step",
+   "condition": "actuator",
+   "ep_seed": 800059
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800000
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800001
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800002
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800003
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800004
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800005
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800006
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800007
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800008
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800009
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800010
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800011
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800012
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800013
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800014
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800015
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800016
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800017
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800018
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800019
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800020
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800021
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800022
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800023
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800024
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800025
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800026
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800027
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800028
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800029
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800030
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800031
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800032
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800033
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800034
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800035
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800036
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800037
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800038
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800039
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800040
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800041
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800042
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800043
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800044
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800045
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800046
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800047
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800048
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800049
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800050
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800051
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800052
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800053
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800054
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800055
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800056
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800057
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800058
+  },
+  {
+   "family": "step",
+   "condition": "perception",
+   "ep_seed": 800059
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800000
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800001
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800002
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800003
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800004
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800005
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800006
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800007
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800008
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800009
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800010
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800011
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800012
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800013
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800014
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800015
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800016
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800017
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800018
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800019
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800020
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800021
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800022
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800023
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800024
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800025
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800026
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800027
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800028
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800029
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800030
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800031
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800032
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800033
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800034
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800035
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800036
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800037
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800038
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800039
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800040
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800041
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800042
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800043
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800044
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800045
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800046
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800047
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800048
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800049
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800050
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800051
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800052
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800053
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800054
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800055
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800056
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800057
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800058
+  },
+  {
+   "family": "step",
+   "condition": "combined",
+   "ep_seed": 800059
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800000
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800001
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800002
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800003
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800004
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800005
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800006
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800007
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800008
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800009
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800010
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800011
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800012
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800013
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800014
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800015
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800016
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800017
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800018
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800019
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800020
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800021
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800022
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800023
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800024
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800025
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800026
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800027
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800028
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800029
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800030
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800031
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800032
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800033
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800034
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800035
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800036
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800037
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800038
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800039
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800040
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800041
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800042
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800043
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800044
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800045
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800046
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800047
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800048
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800049
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800050
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800051
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800052
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800053
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800054
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800055
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800056
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800057
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800058
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "healthy",
+   "ep_seed": 800059
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800000
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800001
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800002
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800003
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800004
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800005
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800006
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800007
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800008
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800009
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800010
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800011
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800012
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800013
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800014
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800015
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800016
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800017
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800018
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800019
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800020
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800021
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800022
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800023
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800024
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800025
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800026
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800027
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800028
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800029
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800030
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800031
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800032
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800033
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800034
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800035
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800036
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800037
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800038
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800039
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800040
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800041
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800042
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800043
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800044
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800045
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800046
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800047
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800048
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800049
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800050
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800051
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800052
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800053
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800054
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800055
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800056
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800057
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800058
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "actuator",
+   "ep_seed": 800059
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800000
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800001
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800002
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800003
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800004
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800005
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800006
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800007
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800008
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800009
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800010
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800011
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800012
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800013
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800014
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800015
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800016
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800017
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800018
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800019
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800020
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800021
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800022
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800023
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800024
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800025
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800026
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800027
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800028
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800029
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800030
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800031
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800032
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800033
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800034
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800035
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800036
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800037
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800038
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800039
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800040
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800041
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800042
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800043
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800044
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800045
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800046
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800047
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800048
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800049
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800050
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800051
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800052
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800053
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800054
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800055
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800056
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800057
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800058
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "perception",
+   "ep_seed": 800059
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800000
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800001
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800002
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800003
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800004
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800005
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800006
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800007
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800008
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800009
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800010
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800011
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800012
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800013
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800014
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800015
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800016
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800017
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800018
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800019
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800020
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800021
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800022
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800023
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800024
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800025
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800026
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800027
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800028
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800029
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800030
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800031
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800032
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800033
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800034
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800035
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800036
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800037
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800038
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800039
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800040
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800041
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800042
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800043
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800044
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800045
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800046
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800047
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800048
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800049
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800050
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800051
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800052
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800053
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800054
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800055
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800056
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800057
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800058
+  },
+  {
+   "family": "smooth_dock",
+   "condition": "combined",
+   "ep_seed": 800059
+  }
+ ]
+}

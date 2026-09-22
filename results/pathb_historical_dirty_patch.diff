@@ -1,0 +1,1973 @@
+diff --git a/run_all.py b/run_all.py
+index 58863a5..b1a3b71 100644
+--- a/run_all.py
++++ b/run_all.py
+@@ -82,7 +82,7 @@ def run(stage):
+ # identifier. v3 unified the fault-slot execution contract, made M4 a
+ # single-component ablation, scored task completion at the final waypoint and swept
+ # both candidate horizons. Its numbers must not be pooled with v2's.
+-RUN_ID = "v3-contract-and-ablation"
++RUN_ID = "v4-architecture-repair"
+ 
+ 
+ def write_run_identity():
+diff --git a/scsim/controllers.py b/scsim/controllers.py
+index 5490d0a..e18e1cb 100644
+--- a/scsim/controllers.py
++++ b/scsim/controllers.py
+@@ -19,6 +19,8 @@ condition, post-allocation acceptance check (Eq. 18) and stored checked fallback
+ """
+ from __future__ import annotations
+ 
++import time
++
+ import numpy as np
+ 
+ from . import certificate as CT
+@@ -225,6 +227,15 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+         _enf_elig = bool(kw.pop("enforce_eligibility", True))
+         _enf_first = bool(kw.pop("enforce_first_action", True))
+         _enf_post = kw.pop("enforce_post_alloc", None)
++        # Allocation-aware command selection. Default ON because the uniform additive
++        # allowance it replaces is unattainable on this vehicle; kept switchable so its
++        # contribution is measured by ablation rather than asserted.
++        self.alloc_aware = bool(kw.pop("alloc_aware", True))
++        # Enforce Eq. (15)'s first-action decrease condition by exact projection
++        # instead of checking it after the fact and discarding the proposal.
++        self.project_first_action = bool(kw.pop("project_first_action", True))
++        # Declared modification to Eq. (15); see the justification at its use site.
++        self.first_action_eta = bool(kw.pop("first_action_eta", True))
+         kw.setdefault("huber", True)
+         super().__init__(**kw)
+         self.load(checkpoint)
+@@ -258,7 +269,11 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+         self.R = R
+         self.stats.update({"n_reject": 0, "n_would_reject": 0, "n_gate_off": 0,
+                            "n_active": 0, "n_supervisor": 0,
+-                           "n_first_action_fail": 0})
++                           "n_first_action_fail": 0,
++                           # Sec S1.1 eligibility failure attribution
++                           "n_fb_decrease_fail": 0, "n_fb_inadmissible": 0,
++                           "n_elig_radius_fail": 0, "n_elig_fb_only_fail": 0,
++                           "n_proj_infeasible": 0})
+ 
+     def context(self, k, x_hat, hist):
+         return self._z
+@@ -271,6 +286,12 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+ 
+     # ------------------------------------------------------------------
+     def act(self, k, x_hat, ref_prev, chain, hist):
++        # Sec 12: the COMPLETE decision latency, not the solver's reported duration.
++        # This spans context inference, the residual, the feedforward, the fallback
++        # allocation, optimisation, allocation-aware selection and every check, which
++        # is what has to fit the 100 ms period. `solve_ms` alone omitted everything the
++        # learned components add and so could not support a real-time claim.
++        _t0 = time.perf_counter()
+         self.stats["n_steps"] += 1
+         dres = self.residual(k, x_hat, hist)
+         z = self._z
+@@ -288,10 +309,26 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+         if self.recovery and self.P is not None and self.K is not None:
+             u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
+             u_fb = u_r + self.K @ e_k
+-            _, fb_info = chain.trial(u_fb, x_hat[4])
++            if self.alloc_aware:
++                # request the wrench whose REALISATION satisfies the decrease
++                # inequality, seeded from the affine law then the P-optimal wrench
++                u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
++                rho_fb = (self.lam * CT.norm_P(e_k, self.P)
++                          + CT.norm_P(d_r, self.P))
++                u_fb, fb_info, _, _ = self._alloc_aware_trial(
++                    u_fb, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
++                    extra_seeds=[u_opt], rho=rho_fb)
++            else:
++                _, fb_info = chain.trial(u_fb, x_hat[4])
+             u_fb_tx = fb_info["u_nominal_transmitted"]
+-            fb_ok, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
+-            fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain))
++            fb_dec, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
++            fb_adm = self._admissible(u_fb_tx, chain, x_hat[4])
++            fb_ok = bool(fb_dec and fb_adm)
++            # Sec S1.1: eligibility has several independent failure reasons and a
++            # single "ineligible" counter cannot tell them apart, which is why
++            # supervisor dominance could be measured but not explained.
++            self.stats["n_fb_decrease_fail"] += int(not fb_dec)
++            self.stats["n_fb_inadmissible"] += int(not fb_adm)
+             fb_info.update(_slack=fb_slack, _ok=fb_ok, _u_prop=u_fb)
+ 
+         # ---- pre-action eligibility (Eq. 19), now a real branch ----
+@@ -304,7 +341,10 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+         if self.recovery and self.P is not None and self.R is not None:
+             if CT.norm_P(e_k, self.P) > self.R:
+                 eligible = False
++                self.stats["n_elig_radius_fail"] += 1
+         if self.recovery and self.P is not None and self.K is not None and not fb_ok:
++            if eligible:
++                self.stats["n_elig_fb_only_fail"] += 1
+             eligible = False
+         gate = int(eligible)
+         self.stats["n_active" if eligible else "n_gate_off"] += 1
+@@ -344,13 +384,57 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+                 # on the returned proposal, before the candidate is allowed to be
+                 # called feasible. A proposal that fails it is not a feasible candidate
+                 # and is discarded in favour of the checked fallback.
++                # Allocation-aware selection happens BEFORE the first-action screen.
++                # The condition has to be evaluated on the command that will actually
++                # act. Screening the raw proposal and only then allocating rejected
++                # 24-41% of candidates for a defect the allocator was about to
++                # introduce and that the controller could have planned around, which
++                # is what drove the fixed supervisor to 42-66% of all actions.
++                cand, proj_feasible = None, True
++                if (self.project_first_action and self.recovery
++                        and self.P is not None and u_r is not None):
++                    u_star, proj_feasible = self._project_first_action(
++                        u_star, e_k, u_r, d_r, r_now, r_next, chain)
++                    self.stats["n_proj_infeasible"] += int(not proj_feasible)
++                if self.alloc_aware and u_r is not None:
++                    rho = (self.lam * CT.norm_P(e_k, self.P)
++                           + CT.norm_P(d_r, self.P))
++                    u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
++                    u_star, cand, _, _ = self._alloc_aware_trial(
++                        u_star, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
++                        extra_seeds=[u_opt, u_r + self.K @ e_k], rho=rho)
++                    u_eval = cand["u_nominal_transmitted"]
++                else:
++                    u_eval = np.asarray(u_star)
++
+                 first_ok = True
+                 if self.recovery and self.P is not None and u_r is not None:
+                     A_e, B_e = CT.error_jacobians(r_now, r_next)
+-                    lhs = CT.norm_P(A_e @ e_k + B_e @ (np.asarray(u_star) - u_r)
++                    lhs = CT.norm_P(A_e @ e_k + B_e @ (np.asarray(u_eval) - u_r)
+                                     + d_r, self.P)
+                     rhs = (self.lam * CT.norm_P(e_k, self.P)
+                            + CT.norm_P(d_r, self.P))
++                    # DECLARED MODIFICATION to Eq. (15). The manuscript's first-action
++                    # condition carries no implementation allowance, on the premise
++                    # that the planned first input is applied exactly. It is not: the
++                    # command reaches the thrusters through a duty-quantised allocator
++                    # whose error is a known, persistent, non-vanishing quantity, so
++                    # the condition that governs the physical successor is the one on
++                    # the REALISED command, and that one needs the allowance.
++                    #
++                    # This is not a convenience. With no allowance the feasible set
++                    # {u admissible : LHS <= rhs} is EMPTY - verified by exact
++                    # projection, not by a failed search - at 66.6% of the states
++                    # visited in closed loop. The allowance-free condition is therefore
++                    # not implementable on this vehicle at 10 Hz, and enforcing it
++                    # hands two thirds of all actions to the fixed supervisor.
++                    #
++                    # Consequence, reported rather than hidden: with the allowance on
++                    # both sides this condition and Eq. (18) become the same test on
++                    # the same quantity, so the post-allocation decrease test is
++                    # redundant BY CONSTRUCTION rather than merely inactive.
++                    if self.first_action_eta:
++                        rhs = rhs + self.eta
+                     first_ok = bool(lhs <= rhs)
+                     self.stats["n_first_action_fail"] += int(not first_ok)
+ 
+@@ -360,7 +444,8 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+                     # fallback is transmitted
+                     chosen, accepted, src = fb_info, False, "fallback_first_action"
+                 else:
+-                    _, cand = chain.trial(u_star, x_hat[4])
++                    if cand is None:
++                        _, cand = chain.trial(u_star, x_hat[4])
+                     cand["_u_prop"] = u_star
+                     cand["_first_action_ok"] = first_ok
+                     if fb_info is not None:
+@@ -373,7 +458,7 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+                         u_cand_tx = cand["u_nominal_transmitted"]
+                         ok_dec, slack = self._check(e_k, u_cand_tx, u_r, d_r,
+                                                     r_now, r_next)
+-                        ok_adm = self._admissible(u_cand_tx, chain)
++                        ok_adm = self._admissible(u_cand_tx, chain, x_hat[4])
+                         cand["_ok_decrease"] = bool(ok_dec)
+                         cand["_ok_admissible"] = bool(ok_adm)
+                         ok = bool(ok_dec and ok_adm)
+@@ -420,6 +505,11 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+                        "solve_ms": info.get("solve_time_ms", np.nan),
+                        "fallback": bool(info.get("fallback", False)),
+                        "u_prop": np.asarray(u_prop, dtype=float)})
++        dec_ms = (time.perf_counter() - _t0) * 1e3
++        chosen["decision_ms"] = float(dec_ms)
++        # A deadline miss keeps its source label rather than being reclassified after
++        # the fact. This is simulation-workstation timing, NOT the flight computer.
++        chosen["deadline_miss"] = bool(dec_ms > C.TS * 1e3)
+         return chosen
+ 
+     # ------------------------------------------------------------------
+@@ -427,6 +517,149 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+         avg = chain.fmax * (chain.duty_ceiling / C.TS)
+         return np.array([2.0 * avg, 2.0 * avg, 4.0 * 0.2 * avg])
+ 
++    # ------------------------------------------------------------------
++    # Allocation-aware command selection.
++    #
++    # WHY THIS EXISTS.  The manuscript treats the allocation error
++    # delta_u = u_tx - u^star as an unknown additive disturbance, absorbed by the
++    # allowance eta in Eq. (18). Measurement says that is the wrong model twice over.
++    #
++    # First, delta_u is not unknown: u_tx is the nominal-equivalent transmitted wrench,
++    # a deterministic function of the commanded pulses, computed by `chain.trial`
++    # BEFORE anything is transmitted. The controller therefore knows it exactly at
++    # decision time.
++    #
++    # Second, the uniform additive bound is unattainable on this vehicle. Holding a
++    # fixed request, the per-step allocation error reproduces with ratio exactly 1.000
++    # over 400 steps - it is a persistent bias, not a dithered one - and its size is
++    # about 6.3% of the commanded correction. The per-step contraction achievable at
++    # 25 kg with 0.96 N of authority at 10 Hz is lambda ~ 0.99, so the decrease
++    # inequality admits a relative error of only 1 - lambda ~ 0.94%. A uniform eta
++    # covering 6.3% cannot coexist with a nonempty region, which is why the search over
++    # 2,730 cells returned nothing.
++    #
++    # WHAT REPLACES IT.  Because the map is known, the request is chosen so that its
++    # REALISATION satisfies the decrease inequality, instead of requesting the affine
++    # law and hoping its allocation error is small. The premise becomes "a reachable
++    # transmitted command satisfying the inequality exists", which is verified online
++    # per step, rather than "the allocation error is uniformly bounded by eta", which
++    # is false here. Measured effect: the decrease condition is satisfiable on 92-100%
++    # of samples instead of 24-49%.
++    #
++    # This is an ablatable component (`alloc_aware=False`), so its contribution is
++    # measured rather than assumed.
++    def _project_first_action(self, u0, e_k, u_r, d_r, r_now, r_next, chain):
++        """Project the MPC's first action onto the Eq. (15) first-action feasible set.
++
++        WHY.  The first-action decrease condition is a CONSTRAINT of Eq. (15), but OSQP
++        solves a quadratic program and cannot carry the conic constraint, so the
++        reviewed implementation checked it afterwards and discarded any proposal that
++        failed. It failed on 71% of steps - not because no feasible command existed
++        (the affine fallback satisfies the same inequality on 94.5% of steps) but
++        because a tracking-cost optimum has no reason to also be a contraction optimum.
++        The candidate was therefore rejected in favour of the fallback almost always,
++        and the comparison attributed to "MPC planning" was mostly measuring the
++        fallback.
++
++        The feasible set {u : ||A e + B(u - u_r) + d_r||_P <= rho} is convex, so the
++        declared architecture is a proposal generator followed by a verifier and an
++        exact projection onto the verified set. Writing M = P^{1/2} B and
++        c = P^{1/2}(A e - B u_r + d_r), the projection of u0 solves
++
++            min ||u - u0||^2  s.t.  ||M u + c|| <= rho,
++
++        whose stationarity gives u(nu) = (I + 2 nu M'M)^{-1} (u0 - 2 nu M'c) for a
++        scalar nu >= 0 found by bisection on ||M u(nu) + c|| = rho. M'M is 3x3, so each
++        iteration is a 3x3 solve.
++
++        Returns (u_projected, feasible). `feasible=False` means the set is empty at this
++        state: the required per-step contraction exceeds the available authority, which
++        is a genuine ineligibility rather than a rejected proposal.
++        """
++        A, B = CT.error_jacobians(r_now, r_next)
++        Pc = np.linalg.cholesky(self.P).T          # P = Pc' Pc
++        M = Pc @ B
++        c = Pc @ (A @ e_k - B @ u_r + d_r)
++        rho = self.lam * CT.norm_P(e_k, self.P) + CT.norm_P(d_r, self.P)
++        u0 = np.asarray(u0, dtype=float)
++        lim = self._achievable(chain)
++
++        if np.linalg.norm(M @ u0 + c) <= rho:
++            return u0, True
++
++        # is the set nonempty at all? its centre is the unconstrained minimiser
++        MtM = M.T @ M
++        u_c = -np.linalg.solve(MtM + 1e-12 * np.eye(3), M.T @ c)
++        if np.linalg.norm(M @ u_c + c) > rho:
++            return u_c, False                      # infeasible: authority insufficient
++
++        lo, hi = 0.0, 1.0
++        for _ in range(60):                        # grow until the constraint is met
++            u = np.linalg.solve(np.eye(3) + 2 * hi * MtM, u0 - 2 * hi * (M.T @ c))
++            if np.linalg.norm(M @ u + c) <= rho:
++                break
++            lo, hi = hi, hi * 4.0
++        for _ in range(60):                        # bisect to the boundary
++            mid = 0.5 * (lo + hi)
++            u = np.linalg.solve(np.eye(3) + 2 * mid * MtM, u0 - 2 * mid * (M.T @ c))
++            if np.linalg.norm(M @ u + c) <= rho:
++                hi = mid
++            else:
++                lo = mid
++        u = np.linalg.solve(np.eye(3) + 2 * hi * MtM, u0 - 2 * hi * (M.T @ c))
++        u = np.clip(u, -lim, lim)
++        return u, bool(np.linalg.norm(M @ u + c) <= rho + 1e-9)
++
++    def _wrench_star(self, e_k, u_r, d_r, chain, r_now, r_next):
++        """The wrench minimising the one-step P-weighted error, over the input box.
++
++        Unconstrained minimiser of ||A e + B(u - u_r) + d_r||_P, then projected onto
++        the declared budget. B'PB is 3x3, so this is a direct solve, not a QP.
++        """
++        A, B = CT.error_jacobians(r_now, r_next)
++        g = A @ e_k + d_r - B @ u_r
++        M = B.T @ self.P @ B
++        u = -np.linalg.solve(M + 1e-12 * np.eye(3), B.T @ self.P @ g)
++        lim = self._achievable(chain)
++        return np.clip(u, -lim, lim)
++
++    def _alloc_aware_trial(self, u_ideal, e_k, u_r, d_r, r_now, r_next, chain, psi,
++                           extra_seeds=None, rho=None):
++        """Trial-allocate `u_ideal`, then take one Newton step on the known allocation
++        map and keep whichever realisation better satisfies the decrease inequality.
++
++        delta = u_tx(u) - u is locally constant on a quantisation cell, so requesting
++        u - delta lands near the intended wrench. Two `chain.trial` calls, no grid
++        search: at 0.6 ms per trial a 27-point search would not fit the 100 ms period.
++        """
++        lim = self._achievable(chain)
++        A, B = CT.error_jacobians(r_now, r_next)
++
++        def lhs_of(u_tx):
++            return CT.norm_P(A @ e_k + B @ (np.asarray(u_tx) - u_r) + d_r, self.P)
++
++        # `seeds` are tried in priority order. The first whose REALISATION satisfies
++        # `rho` wins, so the MPC's own proposal is preferred and the contraction-optimal
++        # wrench is only used as a repair. If none is feasible the LHS-minimising
++        # realisation is returned together with feasible=False, which is a genuine
++        # statement that no reachable command achieves the required decrease here.
++        seeds = [np.asarray(u_ideal, dtype=float)]
++        if extra_seeds:
++            seeds += [np.asarray(s, dtype=float) for s in extra_seeds]
++        best = None
++        for seed in seeds:
++            req = seed
++            for _ in range(2):                     # one Newton step on the known map
++                _, info = chain.trial(req, psi)
++                u_tx = info["u_nominal_transmitted"]
++                val = lhs_of(u_tx)
++                if best is None or val < best[0]:
++                    best = (val, req.copy(), info)
++                if rho is not None and val <= rho:
++                    return req.copy(), info, val, True
++                req = np.clip(req - (np.asarray(u_tx) - req), -lim, lim)
++        return best[1], best[2], best[0], (rho is None or best[0] <= rho)
++
+     def _check(self, e_k, u_nom_tx, u_r, d_r, r_now, r_next):
+         """Post-allocation acceptance check, Eq. (18).
+ 
+@@ -443,10 +676,37 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
+                + self.eta)
+         return bool(lhs <= rhs), float(rhs - lhs)
+ 
+-    def _admissible(self, u_nom_tx, chain):
+-        """u_k in U: the declared convex command budget."""
+-        lim = self._achievable(chain)
+-        return bool(np.all(np.abs(np.asarray(u_nom_tx)) <= lim + 1e-9))
++    def _reachable_box(self, chain, psi):
++        """EXACT per-axis support of the allocator's reachable wrench set at yaw psi.
++
++        The transmitted wrench is A(psi) F with per-thruster force in [0, F_cap], a
++        zonotope whose per-axis support is the sum of the positive entries of each row.
++        At psi = 0 only two thrusters bear on each force axis and the support is
++        2 F_cap = 0.96 N, but at 45 degrees four contribute and it is 2.83 F_cap
++        = 1.36 N.
++        """
++        from .plant import alloc_matrix
++        F_cap = chain.fmax * chain.duty_ceiling / C.TS
++        A = alloc_matrix(float(psi))
++        return np.maximum(np.maximum(A, 0.0).sum(axis=1),
++                          np.maximum(-A, 0.0).sum(axis=1)) * F_cap
++
++    def _admissible(self, u_nom_tx, chain, psi):
++        """u_k in U, tested against the set the actuators can actually deliver.
++
++        This previously compared the transmitted wrench against `_achievable`, the
++        yaw-INDEPENDENT inner bound (0.96 N per axis) used as the planning budget. The
++        transmitted wrench is produced by the allocator from realisable pulse durations,
++        so at off-axis yaw it legitimately reaches 1.14 N and was then declared
++        inadmissible. That single mismatch, not the decrease test and not the eligible
++        radius, rejected the stored fallback on 49.6% of all control steps, made the
++        source ineligible, and handed 52% of transmitted actions to the fixed
++        supervisor. The planning budget stays the conservative inner bound, because a
++        plan must be realisable at every yaw; admissibility of a command that has
++        already been allocated is tested against the true reachable set.
++        """
++        return bool(np.all(np.abs(np.asarray(u_nom_tx))
++                           <= self._reachable_box(chain, psi) + 1e-9))
+ 
+     def _supervisor(self, x_hat, chain):
+         """The fixed supervisor used when eligibility fails.
+@@ -510,10 +770,20 @@ class FallbackOnlyPolicy(LearnedContextPolicy):
+ 
+         u_r, d_r = CT.feedforward(r_now, r_next, self._achievable(chain))
+         u_fb = u_r + self.K @ e_k
+-        _, fb = chain.trial(u_fb, x_hat[4])
++        # M5 must differ from M3 only by the removal of MPC planning, so it gets the
++        # same allocation-aware selection. Leaving it out would make the MPC-versus-
++        # fallback comparison a comparison of two different things.
++        if self.alloc_aware:
++            u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
++            rho_fb = self.lam * CT.norm_P(e_k, self.P) + CT.norm_P(d_r, self.P)
++            u_fb, fb, _, _ = self._alloc_aware_trial(
++                u_fb, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
++                extra_seeds=[u_opt], rho=rho_fb)
++        else:
++            _, fb = chain.trial(u_fb, x_hat[4])
+         u_fb_tx = fb["u_nominal_transmitted"]
+         fb_ok, fb_slack = self._check(e_k, u_fb_tx, u_r, d_r, r_now, r_next)
+-        fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain))
++        fb_ok = bool(fb_ok and self._admissible(u_fb_tx, chain, x_hat[4]))
+ 
+         eligible = fb_ok
+         if self.R is not None and CT.norm_P(e_k, self.P) > self.R:
+diff --git a/scsim/reference.py b/scsim/reference.py
+index 7a23dab..39eea33 100644
+--- a/scsim/reference.py
++++ b/scsim/reference.py
+@@ -204,9 +204,32 @@ TRAIN_FAMILIES = ("step", "smooth")
+ TRANSFER_FAMILY = "transfer"
+ 
+ 
++class StationKeepReference(StepSetpointReference):
++    """Hold ONE setpoint for the whole episode, at a fixed heading.
++
++    This is the narrow operating case of Sec 11/C1: a bounded reference domain with an
++    exactly feasible feedforward. It matters for the certificate because the reference
++    defect bound b_r is what makes the swept region empty - the hardware-matched `step`
++    family contains a 1.0 m setpoint jump in a single 0.1 s sample, for which no bounded
++    input can follow the reference, and its defect measures b_r = 29.7 against an input
++    radius of 1.4. On this family the feedforward is exact and b_r = 0 identically.
++    """
++
++    name = "station_keep"
++
++    def update(self, x, k=None):
++        """No transition: the setpoint is held. Kept for interface compatibility."""
++
++    def final_target(self):
++        p = self.wp[0]
++        return np.array([p[0], p[1], 0.0, 0.0, self.psi_ref, 0.0])
++
++
+ def make_reference(family, start=np.zeros(2), psi_ref=0.0):
+     if family == "step":
+         return StepSetpointReference(start, psi_ref)
++    if family == "station_keep":
++        return StationKeepReference(start, psi_ref)
+     if family == "smooth":
+         return SmoothFeasibleReference(start, psi_ref)
+     if family == "transfer":
+diff --git a/scsim/runner.py b/scsim/runner.py
+index 05090b3..e5614ed 100644
+--- a/scsim/runner.py
++++ b/scsim/runner.py
+@@ -45,6 +45,8 @@ class EpisodeLog:
+     use_hist: list = field(default_factory=list)
+     accel: list = field(default_factory=list)
+     solve_ms: list = field(default_factory=list)
++    decision_ms: list = field(default_factory=list)
++    deadline_miss: list = field(default_factory=list)
+     fallback: list = field(default_factory=list)
+     fault_skip: list = field(default_factory=list)
+     pose_valid: list = field(default_factory=list)
+@@ -271,7 +273,13 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
+         if record:
+             log.x_true.append(x.copy())
+             log.x_hat.append(x_hat.copy())
+-            log.ref.append(ref_prev[1].copy())
++            # Sec S0.3: r_now and the COMMITTED successor are different quantities and
++            # must be stored as such. Both fields previously received ref_prev[1], so
++            # the "current" reference was actually the successor and any analysis
++            # differencing the two saw an identically zero reference increment. Only
++            # `ref_score` feeds the reported metrics, so this corrects the model and
++            # bookkeeping channels without moving any scored quantity.
++            log.ref.append(ref_prev[0].copy())
+             log.ref_score.append(ref_gen.scoring_reference(k).copy())
+             log.ref_next.append(r_committed_next)
+             log.u_prop.append(np.asarray(out["u_prop"], dtype=float).copy())
+@@ -283,6 +291,9 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
+             log.use_hist.append(chain.use_hist.copy())
+             log.accel.append(a_mag)
+             log.solve_ms.append(out.get("solve_ms", np.nan))
++            # Sec 12: complete decision latency and deadline outcome
++            log.decision_ms.append(float(out.get("decision_ms", np.nan)))
++            log.deadline_miss.append(bool(out.get("deadline_miss", False)))
+             log.fallback.append(bool(out.get("fallback", False)))
+             log.fault_skip.append(bool(out["fault_skip"]))
+             log.pose_valid.append(bool(obs.get("valid", True)))
+diff --git a/stage0_semantics.py b/stage0_semantics.py
+index a87e71a..00aee32 100644
+--- a/stage0_semantics.py
++++ b/stage0_semantics.py
+@@ -449,6 +449,82 @@ def sec6_enclosure_not_falsified():
+           f"was found ({detail}).")
+ 
+ 
++def sec5_recovery_ordering():
++    """Sec 6.2: the four prescribed synthetic traces, plus the trace that produced the
++    false time-zero label in the reviewed scorer.
++
++    These are pure scoring checks on constructed membership sequences, so they need no
++    simulation and cannot be satisfied by a favourable physical outcome.
++    """
++    import stage6_methods as s6
++    hold, onset, n = 21, 20, 120
++
++    def trace(spec):
++        v = np.zeros(n, dtype=bool)
++        for lo, hi in spec:
++            v[lo:hi] = True
++        return v
++
++    cases = {
++        # 1. always inside: maintenance, never a reacquisition
++        "always_inside": (trace([(0, n)]),
++                          dict(mode="maintenance", success=True, maintained=True,
++                               excursion=False, reacquired=None, t_from_onset=0.0)),
++        # 2. outside at onset, then returns: reacquisition timed from onset itself
++        "outside_then_return": (trace([(0, 10), (60, n)]),
++                                dict(mode="reacquisition", success=True,
++                                     reacquired=True, excursion=True,
++                                     t_from_onset=4.0, t_from_excursion=4.0)),
++        # 3. inside, leaves, never returns: a recorded failure, not censoring
++        "leaves_no_return": (trace([(0, 40)]),
++                             dict(mode="reacquisition", success=False,
++                                  reacquired=False, excursion=True,
++                                  reason="no_qualifying_dwell_after_excursion")),
++        # 4. inside, leaves, returns and holds: reacquisition after the excursion
++        "leave_then_return": (trace([(0, 40), (70, n)]),
++                              dict(mode="reacquisition", success=True,
++                                   reacquired=True, excursion=True,
++                                   t_from_onset=5.0, t_from_excursion=3.0)),
++        # 5. THE REGRESSION TRACE. Inside across onset long enough to dwell, then
++        #    thrown out and never recovered. The old scorer found its dwell at t=onset,
++        #    saw a later excursion, and reported reacquired=True at recovery_time=0.
++        "dwell_then_excursion": (trace([(0, 60)]),
++                                 dict(mode="reacquisition", success=False,
++                                      reacquired=False, excursion=True)),
++        # 6. early stop: maintenance must NOT be inferred from missing samples
++        "truncated": (trace([(0, 30)])[:30],
++                      dict(mode="censored", success=False,
++                           reason="assessment_window_incomplete")),
++    }
++    bad = []
++    for name, (v, want) in cases.items():
++        got = s6.score_recovery(v, onset, hold)
++        for key, exp in want.items():
++            if isinstance(exp, float):
++                okv = np.isclose(got[key], exp)
++            else:
++                okv = got[key] == exp
++            if not okv:
++                bad.append(f"{name}.{key}: got {got[key]!r} want {exp!r}")
++    # the specific regression, stated explicitly
++    reg = s6.score_recovery(cases["dwell_then_excursion"][0], onset, hold)
++    reg_ok = not (reg["reacquired"] and reg["t_from_onset"] == 0.0)
++    check("5.1a ordered recovery scoring on the prescribed synthetic traces",
++          not bad,
++          f"{len(cases)} constructed traces (always inside; outside then return; "
++          f"leaves and never returns; leave then return; dwell-then-excursion; "
++          f"truncated window) agree with the declared ordering on every asserted "
++          f"field" + ("" if not bad else "; mismatches: " + "; ".join(bad)))
++    check("5.1b a dwell before the excursion is not credited as reacquisition",
++          reg_ok,
++          "a trace inside tolerance across onset for longer than the dwell and then "
++          "permanently thrown out is recorded as "
++          f"mode={reg['mode']}, success={reg['success']}, reason={reg['reason']}. "
++          "The reviewed scorer returned reacquired=True with recovery_time=0.0 on "
++          "this trace, crediting a return before the departure it was recovering "
++          "from.")
++
++
+ def main():
+     t0 = time.time()
+     print("=" * 78)
+@@ -473,6 +549,9 @@ def main():
+     print("\n--- Section 4.6: controller selection semantics ---")
+     sec4_selection_semantics()
+ 
++    print("\n--- Section 5.1/6.2: recovery scoring order ---")
++    sec5_recovery_ordering()
++
+     print("\n--- Section 6.1: interval enclosure soundness ---")
+     sec6_enclosure_not_falsified()
+ 
+diff --git a/stage6_methods.py b/stage6_methods.py
+index 8904f35..f5e9195 100644
+--- a/stage6_methods.py
++++ b/stage6_methods.py
+@@ -53,7 +53,10 @@ MODEL_SEEDS = (0, 1, 2)
+ N_TEST_PER_COND = 60          # protocol Sec 6: 50-100 matched episodes per condition
+ N_CALIB_PER_COND = 25
+ STEPS = C.EPISODE_STEPS
+-HOLD_STEPS = 20               # 2 s inside tolerance counts as recovered
++# Sec 6.2: a 2 s dwell at 10 Hz spans 20 INTERVALS and therefore 21 OBSERVATIONS.
++# Requiring 20 observations asks for 1.9 s of elapsed time under the sample-hold
++# convention used here, which silently relaxes every declared dwell by one sample.
++HOLD_STEPS = 21               # 2.0 s (= 20 intervals) inside tolerance
+ 
+ # Sec 7.1 method matrix. The ID column is what the paper tables cite; the internal
+ # name is what the code and checkpoints use.
+@@ -64,16 +67,22 @@ HOLD_STEPS = 20               # 2 s inside tolerance counts as recovered
+ #   M4  full_no_check      M3 checkpoint, post-allocation acceptance bypassed
+ #   M5  fallback_only      checked fallback feedback only, no MPC planning
+ #   M6  adaptive_mpc       adaptation baseline with a documented update law
++#   M7  no_alloc_aware     M3 without allocation-aware command selection
++#   M8  strict_first_action M3 with the manuscript's allowance-free first-action test
+ #   --  zero_context       hardware-matched comparator, DIAGNOSTIC only
++# M7 and M8 exist because this campaign DEPARTS from the manuscript in exactly two
++# places, and each departure must carry its own measured effect rather than a claim.
+ METHOD_IDS = {"nominal_recovery": "M0", "constant_context": "M1",
+               "no_impact": "M2", "full": "M3", "full_no_check": "M4",
+               "fallback_only": "M5", "adaptive_mpc": "M6",
++              "no_alloc_aware": "M7", "strict_first_action": "M8",
+               "zero_context": "HW"}
+ 
+ # methods that do not depend on a training seed
+ SEEDLESS = ("zero_context", "adaptive_mpc")
+ LEARNED = ("nominal_recovery", "constant_context", "no_impact", "full",
+-           "full_no_check", "fallback_only")
++           "full_no_check", "fallback_only", "no_alloc_aware",
++           "strict_first_action")
+ METHODS = SEEDLESS + LEARNED
+ 
+ # Sec 8.1: task success thresholds declared BEFORE the final test, and fixed across
+@@ -85,7 +94,7 @@ METHODS = SEEDLESS + LEARNED
+ # the baseline moves.
+ TASK_TOL_POS = 0.15          # m
+ TASK_TOL_YAW = np.deg2rad(5.0)
+-TASK_DWELL_STEPS = 20        # 2.0 s at 10 Hz
++TASK_DWELL_STEPS = 21        # 2.0 s = 20 intervals = 21 observations at 10 Hz
+ TASK_DEADLINE_STEPS = C.EPISODE_STEPS
+ 
+ # Protocol Sec 5 requires >=3 training seeds for the variants whose TRAINING differs,
+@@ -99,7 +108,10 @@ TASK_DEADLINE_STEPS = C.EPISODE_STEPS
+ SEEDS_FOR = {"no_impact": MODEL_SEEDS, "full": MODEL_SEEDS,
+              "full_no_check": MODEL_SEEDS,
+              "constant_context": (0,), "nominal_recovery": (0,),
+-             "fallback_only": MODEL_SEEDS}
++             "fallback_only": MODEL_SEEDS,
++             # the two declared-departure ablations reuse the `full` checkpoints, so
++             # they are per-checkpoint comparisons and run on every seed
++             "no_alloc_aware": MODEL_SEEDS, "strict_first_action": MODEL_SEEDS}
+ 
+ 
+ # --------------------------------------------------------------------------
+@@ -169,9 +181,11 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
+     # would confound the representation with the supervision and make the
+     # "does a CHANGING context help?" comparison unreadable.
+     tag = {"no_impact": "no_impact", "full": "full", "full_no_check": "full",
+-           "full_monitor": "full", "constant_context": "const"}[method]
++           "full_monitor": "full", "constant_context": "const",
++           "no_alloc_aware": "full", "strict_first_action": "full"}[method]
+     mode = {"no_impact": "enforce", "full": "enforce", "full_no_check": "enforce",
+-            "full_monitor": "monitor", "constant_context": "enforce"}[method]
++            "full_monitor": "monitor", "constant_context": "enforce",
++            "no_alloc_aware": "enforce", "strict_first_action": "enforce"}[method]
+     # Sec 4.2: M4 (`full_no_check`) must be a SINGLE-component ablation. It keeps the
+     # same checkpoint, eligibility/supervisor diversion, first-action condition,
+     # solver fallback and command-admissibility budget as M3, and disables ONLY the
+@@ -179,6 +193,14 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
+     # switched off three mechanisms at once, so the gap could not be attributed to the
+     # allocated-command check.
+     extra = ({"enforce_post_alloc": False} if method == "full_no_check" else {})
++    # M7/M8: each DECLARED DEPARTURE from the manuscript gets its own single-component
++    # ablation, so its contribution is measured rather than asserted. M7 removes
++    # allocation-aware command selection and requests the affine/optimised wrench
++    # directly. M8 restores the manuscript's allowance-free first-action condition.
++    if method == "no_alloc_aware":
++        extra = {"alloc_aware": False}
++    elif method == "strict_first_action":
++        extra = {"first_action_eta": False}
+     return LearnedContextPolicy(
+         f"{DATA}/model_{tag}_s{model_seed}.pt", check_mode=mode,
+         P=cert["P"], K=cert["K"], lam=cert["lam"], eta=cert["eta"],
+@@ -186,6 +208,74 @@ def make_policy(method, model_seed, cert, N=C.N_HORIZON_HW):
+ 
+ 
+ # --------------------------------------------------------------------------
++def score_recovery(inside, onset, hold):
++    """Ordered recovery scoring, Sec 6.2.
++
++    `inside[k]` is membership in the declared recovery tolerance at sample k, `onset`
++    the fault-onset index. Pass inside=None for an episode with no onset.
++
++    The defect this replaces: the previous scorer searched for the first qualifying
++    dwell anywhere at or after onset and then, separately, asked whether ANY later
++    sample left tolerance. An episode that sat inside tolerance across onset, dwelled,
++    and only afterwards was thrown out was therefore recorded as `reacquired` with
++    `recovery_time = 0` - a reacquisition credited before the excursion it was supposed
++    to recover from. Order is now explicit: an excursion must be located first, and the
++    qualifying dwell must begin strictly after it.
++
++    Returns both clocks the plan asks for (`t_from_onset`, `t_from_excursion`), both
++    dwell endpoints (`t_return_start`, `t_return_complete`), and whether the vehicle
++    departed again after a successful return, since sustained recovery and
++    recover-then-fail are different outcomes.
++    """
++    out = {"mode": "healthy", "success": False, "inside_at_onset": None,
++           "excursion": None, "reacquired": None, "maintained": None,
++           "t_from_onset": np.nan, "t_from_excursion": np.nan,
++           "t_return_start": np.nan, "t_return_complete": np.nan,
++           "departed_again": None, "window_complete": None, "reason": "no_onset"}
++    if inside is None or onset is None:
++        return out
++    inside = np.asarray(inside, dtype=bool)
++    n = len(inside)
++    # The assessment window must actually be observed. An episode that stops early
++    # cannot establish maintenance: absence of later samples is not absence of a later
++    # excursion, so it is censored rather than credited.
++    out["window_complete"] = bool(n - onset >= hold)
++    out["inside_at_onset"] = bool(inside[onset])
++
++    if not out["window_complete"]:
++        out.update(mode="censored", reason="assessment_window_incomplete")
++        return out
++
++    post = inside[onset:]
++    first_out = int(np.argmax(~post)) if (~post).any() else None
++
++    if out["inside_at_onset"] and first_out is None:
++        # inside at onset, full window observed, and it never left
++        out.update(mode="maintenance", success=True, maintained=True,
++                   excursion=False, reacquired=None, t_from_onset=0.0,
++                   t_return_start=0.0, t_return_complete=float((hold - 1) * C.TS),
++                   departed_again=False, reason="maintained")
++        return out
++
++    # An excursion exists. It starts at onset if already outside there, otherwise at
++    # the first later sample outside tolerance.
++    exc = onset if not out["inside_at_onset"] else onset + first_out
++    out.update(mode="reacquisition", excursion=True)
++    for t in range(exc + 1, n - hold + 1):
++        if inside[t:t + hold].all():
++            out.update(success=True, reacquired=True,
++                       t_from_onset=float((t - onset) * C.TS),
++                       t_from_excursion=float((t - exc) * C.TS),
++                       t_return_start=float((t - onset) * C.TS),
++                       t_return_complete=float((t + hold - 1 - onset) * C.TS),
++                       departed_again=bool((~inside[t + hold:]).any()),
++                       reason="reacquired")
++            return out
++    out.update(success=False, reacquired=False, maintained=False,
++               reason="no_qualifying_dwell_after_excursion")
++    return out
++
++
+ def episode_metrics(log, sc, tol):
+     """Per-trial metrics. Physical error is against the ORIGINAL scoring reference."""
+     a = log.arrays()
+@@ -222,6 +312,19 @@ def episode_metrics(log, sc, tol):
+         "has_recovery": has_rec, "check_enforced": checking,
+         "n_fault_skips": log.meta["n_fault_skips"],
+         "solve_ms_p95": float(np.nanpercentile(a["solve_ms"], 95)),
++        # Sec 12: complete decision latency. Reported at several quantiles because a
++        # median comfortably inside the period says nothing about the tail that
++        # actually causes a missed deadline. Simulation-workstation timing, not flight.
++        "decision_ms_p50": float(np.nanpercentile(a["decision_ms"], 50))
++        if len(a.get("decision_ms", [])) else np.nan,
++        "decision_ms_p95": float(np.nanpercentile(a["decision_ms"], 95))
++        if len(a.get("decision_ms", [])) else np.nan,
++        "decision_ms_p99": float(np.nanpercentile(a["decision_ms"], 99))
++        if len(a.get("decision_ms", [])) else np.nan,
++        "decision_ms_max": float(np.nanmax(a["decision_ms"]))
++        if len(a.get("decision_ms", [])) else np.nan,
++        "deadline_miss_rate": float(np.mean(a["deadline_miss"]))
++        if len(a.get("deadline_miss", [])) else np.nan,
+     }
+ 
+     # ---- action source: which controller actually produced the transmitted action ----
+@@ -299,28 +402,18 @@ def episode_metrics(log, sc, tol):
+     m["attempted"] = bool(onset is not None and onset + HOLD_STEPS < n)
+     m["success"], m["recovery_time"] = False, np.nan
+     if m["attempted"]:
+-        # Sec 8.2: separate MAINTENANCE (already inside tolerance at onset and staying
+-        # there) from REACQUISITION (thrown out and having to come back). Pooling them
+-        # lets easy episodes inflate a recovery rate.
+-        m["was_in_tol_at_onset"] = bool(inside_task[onset])
+-        m["mode"] = "maintenance" if inside_task[onset] else "reacquisition"
+-        # Sec 5.1: the recovery clock starts at ONSET and the qualifying dwell must lie
+-        # entirely at or after onset, so a dwell achieved before the fault can never be
+-        # credited as recovery from it. `tol` is the baseline-relative diagnostic
++        # Sec 6.2: ordered recovery scoring. `tol` is the baseline-relative diagnostic
+         # tolerance (~0.66 m), deliberately distinct from the 0.15 m task tolerance;
+         # the two are never merged into one column.
+-        inside = e_pos <= tol
+-        for t in range(onset, n - HOLD_STEPS + 1):
+-            if inside[t:t + HOLD_STEPS].all():
+-                m["success"] = True
+-                m["recovery_time"] = float((t - onset) * C.TS)
+-                break
+-        # Sec 5.1 "reacquisition": an excursion OUT of tolerance actually occurred
+-        # after onset and the vehicle then came back. Maintenance never left.
+-        left_after_onset = bool((~inside[onset:]).any())
+-        m["excursion_after_onset"] = left_after_onset
+-        m["reacquired"] = bool(m["success"] and left_after_onset)
+-        m["maintained"] = bool(m["success"] and not left_after_onset)
++        rec = score_recovery(e_pos <= tol, onset, HOLD_STEPS)
++        m.update({f"rec_{k}": v for k, v in rec.items()})
++        m["was_in_tol_at_onset"] = rec["inside_at_onset"]
++        m["mode"] = rec["mode"]
++        m["success"] = rec["success"]
++        m["recovery_time"] = rec["t_from_onset"]
++        m["excursion_after_onset"] = rec["excursion"]
++        m["reacquired"] = rec["reacquired"]
++        m["maintained"] = rec["maintained"]
+         # post-onset window is FIXED relative to onset and identical across methods
+         m["post_onset_rmse"] = float(np.sqrt(np.mean(e_pos[onset:] ** 2)))
+         m["post_onset_peak"] = float(e_pos[onset:].max())
+@@ -335,6 +428,8 @@ def episode_metrics(log, sc, tol):
+                     break
+     else:
+         m["was_in_tol_at_onset"] = bool(inside_task[0])
++        for k_, v_ in score_recovery(None, None, HOLD_STEPS).items():
++            m[f"rec_{k_}"] = v_
+         m["mode"] = "healthy"
+         m["post_onset_rmse"] = m["rmse_pos"]
+         m["post_onset_peak"] = m["peak_pos"]
+@@ -737,7 +832,12 @@ def report(out, rows, tol):
+                 "accel_p95": agg([r["accel_p95"] for r in sub]),
+                 "frac_fallback": agg([r["frac_fallback"] for r in sub]),
+                 "post_onset_rmse": po,
+-                "solve_ms_p95": agg([r["solve_ms_p95"] for r in sub])}
++                "solve_ms_p95": agg([r["solve_ms_p95"] for r in sub]),
++                "decision_ms_p50": agg([r["decision_ms_p50"] for r in sub]),
++                "decision_ms_p95": agg([r["decision_ms_p95"] for r in sub]),
++                "decision_ms_p99": agg([r["decision_ms_p99"] for r in sub]),
++                "decision_ms_max": agg([r["decision_ms_max"] for r in sub]),
++                "deadline_miss_rate": agg([r["deadline_miss_rate"] for r in sub])}
+             print(f"{cond:11s} {METHOD_IDS[meth]:3s} {meth:17s} "
+                   f"{po['mean']:7.3f}+-{po['sd']:<7.3f} "
+                   f"{rm['mean']:10.3f} {pk['median']:9.2f} "
+@@ -769,7 +869,12 @@ def report(out, rows, tol):
+              ("full", "fallback_only", "M3-M5 MPC beyond fallback", False),
+              ("full", "full_no_check", "M3-M4 post-allocation check", False),
+              ("full", "adaptive_mpc", "M3-M6 vs adaptive baseline", False),
+-             ("full", "zero_context", "M3-HW vs hardware comparator", False)]
++             ("full", "zero_context", "M3-HW vs hardware comparator", False),
++             # each declared departure from the manuscript, measured on its own
++             ("full", "no_alloc_aware",
++              "M3-M7 allocation-aware command selection", False),
++             ("full", "strict_first_action",
++              "M3-M8 allowance on the first-action condition", False)]
+     eff = {}
+     for a, b, label, is_primary in pairs:
+         mark = "  <== PRIMARY" if is_primary else "  (exploratory)"
+diff --git a/stage7_scoped.py b/stage7_scoped.py
+new file mode 100644
+index 0000000..dd007f2
+--- /dev/null
++++ b/stage7_scoped.py
+@@ -0,0 +1,301 @@
++"""Stage 7b: one narrow recovery case, verified and conformally calibrated (Sec 11).
++
++Sec 11 asks for ONE useful verified recovery example rather than a certified mission
++library, and for an honest report of failure if none survives. This stage implements
++C1-C4 on the narrowest defensible operating case and reports the outcome either way.
++
++WHY A SCOPED CASE IS THE RIGHT TARGET.  The swept search returned nothing in 2,730
++cells, and the reason is now identified rather than guessed:
++
++  * b_r, the reference-defect bound, is 29.7 on the hardware-matched `step` family
++    against an input radius of 1.4. That family contains a 1.0 m setpoint jump inside
++    one 0.1 s sample. No bounded input follows a discontinuous reference, so the
++    certificate over that domain is empty for a physical reason and no search over
++    (P, K, lambda) could ever have found a cell. On a smooth feasible reference the same
++    quantity is 0.096, and on a held setpoint it is exactly 0.
++  * The per-step contraction achievable on a 25 kg vehicle with 0.96 N of authority at
++    10 Hz is lambda ~ 0.99, because deadbeat gains for this plant are K ~ 2500 N/m and
++    saturate 0.96 N at 0.4 mm of position error. The resulting 1/(1 - lambda) ~ 100
++    amplifies every per-step term, so the budget is ~0.044 in the P norm - not a
++    tuning choice but a consequence of mass, thrust and sample period.
++
++So the certificate has to be asked on a domain where b_r vanishes, and every remaining
++term has to fit inside R_U (1 - lambda). This stage asks exactly that question.
++
++WHAT IS AND IS NOT CLAIMED.  lambda comes from `verify_box`, an interval enclosure over
++the declared parameter and yaw domain, so the contraction factor is verified rather than
++sampled. The prediction budget is CALIBRATED, not verified: it is a conformal threshold
++over per-episode maxima under the frozen policy, so its guarantee is the marginal
++(1 - delta) statement of the manuscript over the simulated population, not a
++deterministic bound. Per Sec 11/C3 the score is one maximum per complete episode; a
++per-timestep quantile of the same quantity is roughly 30% smaller and would not be the
++paper's procedure. Calibration and test episodes are disjoint and the policy is frozen
++before either is generated.
++"""
++from __future__ import annotations
++
++import json
++import os
++import time
++
++import numpy as np
++
++import scsim.certificate as CT
++import scsim.config as C
++import stage6_methods as s6
++import stage7_certificate as s7
++from scsim import scenarios as S
++from scsim.runner import run_policy_episode
++
++RES = "results"
++ACH = np.array([0.96, 0.96, 0.384])     # inner bound: reachable at EVERY yaw
++DELTA = 0.025                           # manuscript's delta_D = delta_E
++N_CALIB, N_TEST = 80, 40
++# The commanded heading of a held setpoint is a SINGLE value, so the reference-yaw
++# domain is a point. Heading ERROR is part of the state, bounded by R and covered by
++# R_chart; it does not belong in the reference enclosure. Declaring a +/-0.05 rad
++# reference band instead multiplies E_B by |K| ~ 27 and drove nu from 0.002 to 0.41,
++# which alone pushed lambda above 1 on every design.
++YAW_HALF = 0.0                          # held heading: the reference yaw is a point
++SPAN = 0.02                             # declared mass/inertia tolerance
++SPAN_GRID = (0.02, 0.01)
++STEPS = 300
++X0_SIGMA_POS = 0.10      # m, declared initial-error spread about the held setpoint
++X0_SIGMA_YAW = 0.02      # rad
++MIN_ACTIVE_FRAC = 0.20   # a region the vehicle never enters is not a useful one
++
++
++def sk_boxes(span=SPAN, yaw_half=YAW_HALF):
++    """The C1 domain: one held setpoint, heading confined to a declared band."""
++    r = np.array([0.0, -2.0, 0, 0, 0.0, 0])
++    m_iv = (C.MASS * (1 - span), C.MASS * (1 + span))
++    j_iv = (C.JZZ * (1 - span), C.JZZ * (1 + span))
++    A, B = CT.error_jacobians(r, r, mass=C.MASS, jzz=C.JZZ)
++    E_A, E_B = CT.interval_jacobian_bounds(-yaw_half, yaw_half, m_iv, j_iv,
++                                           psi_now_c=0.0, psi_next_c=0.0)
++    return [{"r_now": r, "r_next": r, "A": A, "B": B, "E_A": E_A, "E_B": E_B,
++             "yaw_range": [-yaw_half, yaw_half]}]
++
++
++def design_search(boxes):
++    """C2: maximise the admissible budget R_max (1 - lambda) - b_r over the design grid.
++
++    The reviewed design grid only ever tried lambda_0 >= 0.90 and ranked cells by a
++    ratio that is +inf for every non-contracting design. It is ranked here by the
++    quantity that actually decides emptiness.
++    """
++    A_l = [b["A"] for b in boxes]
++    B_l = [b["B"] for b in boxes]
++    cf = s7._chain_factory(dict(duty=0.40, fmax=C.FMAX_PER_THRUSTER,
++                                offset=C.FIT_OFFSET))
++    rows, best = [], None
++    for lam0 in (0.96, 0.97, 0.98, 0.985, 0.99, 0.995):
++        for w in (1e3, 1e4, 1e5, 1e6):
++            r = CT.solve_lmi(A_l, B_l, lam0, w_effort=w)
++            if r is None:
++                continue
++            P, K = r
++            ev = s7.evaluate_certificate(P, K, boxes, "step", achievable=ACH,
++                                         chain_factory=cf)
++            # budget available for the prediction bound once b_r and the radius are set
++            budget = ev["R_max"] * (1.0 - ev["lam"]) - ev["b_r"]
++            rows.append({"lam0": lam0, "w_effort": w, "lam": ev["lam"],
++                         "gamma_max": ev["gamma_max"], "nu_max": ev["nu_max"],
++                         "b_r": ev["b_r"], "R_U": ev["R_U"],
++                         "R_corridor": ev["R_corridor"], "R_chart": ev["R_chart"],
++                         "R_max": ev["R_max"], "K_absmax": ev["K_absmax"],
++                         "budget_for_d": budget})
++            if ev["lam"] < 1.0 and (best is None or budget > best[0]["budget_for_d"]):
++                best = (rows[-1], P, K)
++    return rows, best
++
++
++def episode_max_mismatch(P, K, lam, eta, R, method, seeds, alloc_aware=True):
++    """One maximum affine-model mismatch per COMPLETE episode, in the P norm.
++
++    This is the score object of Sec 11/C3. It is deliberately the per-episode maximum:
++    a per-timestep quantile of the same quantity is a different and much weaker object.
++    """
++    cert = {"P": P, "K": K, "lam": lam, "eta": eta, "R": R}
++    out = []
++    for sd in seeds:
++        rng = S.scenario_rng("cert_healthy", sd)
++        sc = S.make_condition("healthy", rng)
++        sc = sc.__class__(**{**sc.__dict__, "reference": "station_keep"})
++        pol = s6.make_policy(method, 0, cert, N=C.N_HORIZON_HW)
++        pol.alloc_aware = alloc_aware
++        # C1 "modest initial error": start AT the held setpoint with a small declared
++        # perturbation. Starting 2 m away, as the tracking scenarios do, puts the entire
++        # episode outside any region a contracting design can certify, and the
++        # calibration then scores zero active transitions and accepts vacuously.
++        wp = np.zeros(6)
++        wp[:2] = C.WP1
++        x0 = wp.copy()
++        x0[:2] += rng.normal(0.0, X0_SIGMA_POS, 2)
++        x0[4] += rng.normal(0.0, X0_SIGMA_YAW)
++        log = run_policy_episode(pol, seed=sd, steps=STEPS, scenario=sc, x0=x0)
++        a = log.arrays()
++        xt, ref, refn, u_tx = a["x_true"], a["ref"], a["ref_next"], a["u_nom_tx"]
++        worst, n_act = 0.0, 0
++        for k in range(len(xt) - 1):
++            e_k = CT.error_coords(xt[k], ref[k])
++            if CT.norm_P(e_k, P) > R:          # only recovery-ACTIVE sources count
++                continue
++            n_act += 1
++            e_k1 = CT.error_coords(xt[k + 1], refn[k])
++            A, B = CT.error_jacobians(ref[k], refn[k])
++            u_r, d_r = CT.feedforward(ref[k], refn[k], ACH)
++            pred = A @ e_k + B @ (u_tx[k] - u_r) + d_r
++            worst = max(worst, CT.norm_P(e_k1 - pred, P))
++        out.append({"seed": int(sd), "max_mismatch": float(worst),
++                    "n_active": int(n_act),
++                    "active_frac": float(n_act / max(len(xt) - 1, 1))})
++    return out
++
++
++def conformal_threshold(scores, delta=DELTA):
++    """Split-conformal upper bound: the ceil((n+1)(1-delta)) order statistic.
++
++    Returns None when the rank exceeds n, which is the honest outcome for a calibration
++    set too small to support a finite threshold at this delta rather than a reason to
++    silently lower delta.
++    """
++    v = np.sort(np.asarray(scores, dtype=float))
++    n = len(v)
++    rank = int(np.ceil((n + 1) * (1.0 - delta)))
++    if rank > n:
++        return None, rank, n
++    return float(v[rank - 1]), rank, n
++
++
++def main():
++    t0 = time.time()
++    print("=" * 78)
++    print("STAGE 7b  one narrow recovery case: verify, freeze, calibrate (Sec 11)")
++    print("=" * 78)
++    boxes = sk_boxes()
++    print(f"\nC1 domain: held setpoint, heading band +/-{YAW_HALF} rad, "
++          f"mass/inertia +/-{SPAN:.0%}, reference defect b_r = 0 by construction")
++
++    print("\nC2 design search (ranked by the budget that decides emptiness)")
++    rows, best = design_search(boxes)
++    print(f"  {'lam0':>5s} {'w':>7s} {'lam':>7s} {'b_r':>7s} {'R_U':>7s} "
++          f"{'R_max':>7s} {'|K|':>8s} {'budget for d_cert':>18s}")
++    for r in rows:
++        star = "  <== best" if best and r is best[0] else ""
++        print(f"  {r['lam0']:5.2f} {r['w_effort']:7.0e} {r['lam']:7.4f} "
++              f"{r['b_r']:7.4f} {r['R_U']:7.3f} {r['R_max']:7.3f} "
++              f"{r['K_absmax']:8.2f} {r['budget_for_d']:+18.5f}{star}")
++    if best is None:
++        print("\n  no contracting design on this domain; nothing to calibrate.")
++        out = {"accepted": False, "reason": "no contracting design",
++               "design_rows": rows}
++        with open(f"{RES}/stage7_scoped.json", "w") as f:
++            json.dump(out, f, indent=1)
++        return 0
++
++    dsg, P, K = best
++    lam, R_max = dsg["lam"], dsg["R_max"]
++    budget = dsg["budget_for_d"]
++    print(f"\n  frozen: lam={lam:.4f}  R_max={R_max:.3f}  "
++          f"admissible prediction budget d_cert < {budget:.5f}")
++
++    # ---- C3: freeze, then generate DISJOINT calibration and test episodes ----
++    # The operating radius is the verified R_max, not an envelope fitted to observed
++    # errors. Eta is not an additive allowance here: allocation-aware selection makes
++    # the realised command satisfy the decrease inequality directly, and the premise
++    # that a reachable command exists is checked online per step.
++    print(f"\nC3 calibration under the FROZEN policy "
++          f"({N_CALIB} calibration + {N_TEST} disjoint test episodes)")
++    method = "no_impact"          # the model selected by the development rule
++    cal = episode_max_mismatch(P, K, lam, 0.0, R_max, method,
++                               seeds=range(1000, 1000 + N_CALIB))
++    thr, rank, n = conformal_threshold([r["max_mismatch"] for r in cal])
++    if thr is None:
++        print(f"  calibration set of {n} cannot support delta={DELTA} "
++              f"(needs rank {rank}); no finite threshold.")
++        accepted = False
++    else:
++        print(f"  per-episode max mismatch: rank {rank}/{n} at delta={DELTA} "
++              f"-> d_cert = {thr:.5f}")
++        accepted = bool(thr < budget)
++        print(f"  frozen budget {budget:.5f} -> "
++              f"{'within budget' if accepted else 'EXCEEDS budget'}")
++
++    s_cert = (0.0 + (thr or np.nan)) / max(1.0 - lam, 1e-12)
++    margin = R_max - s_cert
++    test = episode_max_mismatch(P, K, lam, 0.0, R_max, method,
++                                seeds=range(5000, 5000 + N_TEST))
++    viol = sum(1 for r in test if thr is not None and r["max_mismatch"] > thr)
++    # Sec 11: "nontrivial eligible operation" is part of usefulness. A nonempty region
++    # the closed loop never enters certifies nothing about the vehicle, and a
++    # calibration over zero active transitions would otherwise "accept" vacuously.
++    act_cal = float(np.mean([r["active_frac"] for r in cal]))
++    act_test = float(np.mean([r["active_frac"] for r in test]))
++    n_act_cal = int(sum(r["n_active"] for r in cal))
++    nontrivial = bool(act_test >= MIN_ACTIVE_FRAC and n_act_cal > 0)
++    if not nontrivial:
++        accepted = False
++        print(f"  NOT USEFUL: recovery-active coverage {act_test:.1%} on test "
++              f"(threshold {MIN_ACTIVE_FRAC:.0%}), {n_act_cal} active calibration "
++              f"transitions. A region the vehicle does not enter is not a useful "
++              f"certificate, and a threshold fitted to zero active transitions is "
++              f"vacuous.")
++    print(f"  recovery-active coverage: calibration {act_cal:.1%}, test {act_test:.1%}")
++    print(f"  VERDICT: {'ACCEPTED' if accepted else 'NOT ACCEPTED'}")
++    print(f"\nC4 on {N_TEST} disjoint test episodes: "
++          f"{viol}/{N_TEST} exceed the calibrated bound "
++          f"(nominal allowance {DELTA:.1%})")
++    print(f"  mean recovery-active fraction "
++          f"{np.mean([r['active_frac'] for r in test]):.1%}")
++    print(f"  s_cert = {s_cert:.4f}  R_max = {R_max:.4f}  margin = {margin:+.4f}")
++
++    # physical projection of the certified error region
++    pos_bound = s_cert / np.sqrt(np.linalg.eigvalsh(P).min())
++    print(f"  position projection of the certified region: <= {pos_bound:.3f} m")
++
++    out = {"domain": {"family": "station_keep", "yaw_half": YAW_HALF, "span": SPAN,
++                      "b_r": 0.0},
++           "design_rows": rows, "frozen_design": dsg,
++           "P": np.asarray(P).tolist(), "K": np.asarray(K).tolist(),
++           "delta": DELTA, "n_calib": N_CALIB, "n_test": N_TEST,
++           "calibration": cal, "test": test,
++           "d_cert_calibrated": thr, "conformal_rank": rank,
++           "budget_for_d": budget, "accepted": bool(accepted),
++           "s_cert": float(s_cert), "R_max": float(R_max),
++           "margin": float(margin), "test_violations": int(viol),
++           "active_frac_calib": act_cal, "active_frac_test": act_test,
++           "n_active_calib_transitions": n_act_cal,
++           "nontrivial_coverage": nontrivial,
++           "min_active_frac_required": MIN_ACTIVE_FRAC,
++           "x0_sigma_pos": X0_SIGMA_POS, "x0_sigma_yaw": X0_SIGMA_YAW,
++           "position_bound_m": float(pos_bound),
++           "method": method,
++           "claim": ("A nonempty verified-contraction, conformally calibrated recovery "
++                     "region on the declared station-keeping domain."
++                     if accepted else
++                     "No accepted region on this domain; the calibrated prediction "
++                     "bound exceeds the frozen budget."),
++           "scope_limits": [
++               "lambda is verified by interval enclosure; the prediction bound is "
++               "CALIBRATED, so the statement is marginal over the simulated "
++               "population at 1-delta, not deterministic.",
++               "Simulation calibration supports the simulated population only. A "
++               "hardware probability claim needs its own frozen-policy hardware "
++               "calibration and test episodes.",
++               "The domain is a held setpoint with a narrow heading band. Setpoint "
++               "jumps are OUTSIDE it: b_r = 29.7 there against a radius of 1.4.",
++               f"{N_CALIB}/{N_TEST} episodes, fewer than the 200/100 planning example; "
++               "the threshold is finite at this delta but less precise.",
++               "Floating-point error is not bounded by verified arithmetic.",
++           ],
++           "manifest_hash": C.manifest_hash(),
++           "wall_time_s": time.time() - t0}
++    with open(f"{RES}/stage7_scoped.json", "w") as f:
++        json.dump(out, f, indent=1)
++    print(f"\nwrote {RES}/stage7_scoped.json  ({time.time() - t0:.0f}s)")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/stage9_execution_response.py b/stage9_execution_response.py
+new file mode 100644
+index 0000000..f4d9781
+--- /dev/null
++++ b/stage9_execution_response.py
+@@ -0,0 +1,794 @@
++"""Generate `results/response_to_execution_plan.md`.
++
++A point-by-point response to `RAL_Hardware_and_Simulation_Execution_Plan.md`, keyed to
++that document's section numbers, plus the manuscript and theorem changes this campaign's
++measurements force.
++
++Every number is read from the frozen artefacts rather than typed in.
++
++Status vocabulary, used strictly:
++  IMPLEMENTED     in the code and evidenced by a gate or a measured number
++  DIAGNOSED       the plan asked for a cause; the cause is identified and quantified
++  PARTIAL         some named sub-items done, others named as outstanding
++  NOT IMPLEMENTED not done; no credit claimed
++  NOT APPLICABLE  requires hardware access this work does not have
++"""
++from __future__ import annotations
++
++import json
++import os
++
++RES = "results"
++OUT = f"{RES}/response_to_execution_plan.md"
++CONDS = ("healthy", "actuator", "perception", "combined")
++ID = {"nominal_recovery": "M0", "constant_context": "M1", "no_impact": "M2",
++      "full": "M3", "full_no_check": "M4", "fallback_only": "M5",
++      "adaptive_mpc": "M6", "no_alloc_aware": "M7", "strict_first_action": "M8",
++      "zero_context": "HW"}
++
++
++def load(name):
++    p = f"{RES}/{name}"
++    if not os.path.exists(p):
++        return None
++    with open(p) as f:
++        return json.load(f)
++
++
++def eff(pe, pair, key="post_onset_rmse"):
++    vs = {c: pe[f"{pair}|{c}|{key}"] for c in CONDS if f"{pair}|{c}|{key}" in pe}
++    if not vs:
++        return None
++    m = [v["mean"] for v in vs.values()]
++    return {"lo": min(m), "hi": max(m), "per": vs, "n": len(vs),
++            "better": sum(1 for v in vs.values() if v["hi"] < 0),
++            "worse": sum(1 for v in vs.values() if v["lo"] > 0)}
++
++
++def tabval(tab, cond, meth, key, sub="mean", default=float("nan")):
++    t = tab.get(f"{cond}|{meth}")
++    if not t or key not in t:
++        return default
++    v = t[key]
++    return v.get(sub, default) if isinstance(v, dict) else v
++
++
++def rng_over_conds(tab, meth, key):
++    vs = [tabval(tab, c, meth, key) for c in CONDS]
++    vs = [v for v in vs if v == v]
++    return (min(vs), max(vs)) if vs else (float("nan"),) * 2
++
++
++def pct(x):
++    return "n/a" if x != x else f"{x:.0%}"
++
++
++def main():
++    s0, s6 = load("stage0_semantics.json"), load("stage6_methods.json")
++    s7, s7b = load("stage7_certificate.json"), load("stage7_scoped.json")
++    rsz = load("certificate_region_size.json")
++    s8, ident = load("stage8_horizon.json"), load("run_identity.json")
++    if not s6:
++        print("stage6 artefact missing")
++        return 1
++    pe, tab = s6["paired_effects"], s6["table"]
++
++    L = ["# Response to the RA-L hardware and simulation execution plan", ""]
++    L += [f"Run `{(ident or {}).get('run_id', 'v4')}` · responding to "
++          "[`RAL_Hardware_and_Simulation_Execution_Plan.md`]"
++          "(../RAL_Hardware_and_Simulation_Execution_Plan.md), section by section.", "",
++          "Status words are strict: **IMPLEMENTED** (in the code, evidenced by a gate "
++          "or a measured", "number), **DIAGNOSED** (a cause the plan asked for is "
++          "identified and quantified), **PARTIAL**",
++          "(named sub-items done, others named as outstanding), **NOT IMPLEMENTED** "
++          "(no credit claimed),", "**NOT APPLICABLE** (needs hardware access this work "
++          "does not have).", "", "---", ""]
++
++    # ================= headline =================
++    cand = rng_over_conds(tab, "full", "frac_src_candidate")
++    sup = rng_over_conds(tab, "full", "frac_src_supervisor")
++    L += ["## The headline: the architecture was not the problem, the implementation was",
++          "",
++          "The plan's §1 judged that the simulation \"still evaluates an incomplete "
++          "implementation\". That",
++          "was right, and it was the whole story. Three defects, all in the controller "
++          "rather than in the",
++          "method, produced most of the adverse findings in the reviewed campaign.", "",
++          "| Defect | Effect on the reviewed results |", "|---|---|",
++          "| The command-admissibility budget compared the transmitted wrench against "
++          "the yaw-INDEPENDENT inner bound (0.96 N). The allocator legitimately "
++          "delivers up to 1.36 N at off-axis yaw, where four thrusters bear on a force "
++          "axis instead of two. | The stored fallback was declared inadmissible on "
++          "**49.6% of all control steps**, which made the source ineligible and handed "
++          "**52%** of transmitted actions to the fixed supervisor. Not the decrease "
++          "test, and not the eligible radius: the radius never bound once. |",
++          "| The allocation error was modelled as an unknown additive disturbance, "
++          "absorbed by η. It is neither unknown nor additive-small: holding a fixed "
++          "request, the per-step error reproduces with ratio **exactly 1.000** over 400 "
++          "steps, and it is about **6.3%** of the commanded correction against the "
++          "**0.94%** the decrease inequality admits at λ≈0.99. | A uniform η bound "
++          "cannot coexist with a nonempty region, which is why the 2,730-cell search "
++          "returned nothing. |",
++          "| Eq. (15)'s first-action decrease condition was checked AFTER allocation "
++          "and any failing proposal discarded. | The MPC candidate was rejected on "
++          "**71%** of steps even though a satisfying command demonstrably existed, so "
++          "the reported \"8-13% MPC share\" measured the screening, not the planner. |",
++          "",
++          f"With those corrected, the MPC candidate now supplies "
++          f"**{pct(cand[0])}-{pct(cand[1])}** of transmitted",
++          f"commands instead of 8-13%, and the fixed supervisor "
++          f"**{pct(sup[0])}-{pct(sup[1])}** instead of 42-66%. The",
++          "comparisons below are therefore measuring the proposed controller for the "
++          "first time.", "",
++          "Two consequences are unfavourable and are reported as such: the behavioural "
++          "loss still does",
++          "not help, and MPC planning still does not beat its own matched fallback. "
++          "Both are now",
++          "*meaningful* negative results rather than artefacts of a starved "
++          "controller.", "", "---", ""]
++
++    # ================= §2 evidence table =================
++    L += ["## §2 Evidence the paper needs", "",
++          "| Claim | Verdict on current evidence |", "|---|---|"]
++    e21 = eff(pe, "no_impact-constant_context")
++    if e21:
++        L.append(f"| Recent multimodal history improves adaptation | **supported** — "
++                 f"M2−M1 {e21['lo']:+.3f} to {e21['hi']:+.3f} m, favourable in "
++                 f"{e21['better']}/{e21['n']} conditions, matched training losses and "
++                 f"controller |")
++    e22 = eff(pe, "full-no_impact")
++    if e22:
++        L.append(f"| Behavioural supervision contributes useful information | **not "
++                 f"supported** — M3−M2 {e22['lo']:+.3f} to {e22['hi']:+.3f} m, worse "
++                 f"in {e22['worse']}/{e22['n']}; the development grid selected weight "
++                 f"zero |")
++    e23b = eff(pe, "no_impact-nominal_recovery")
++    if e23b:
++        L.append(f"| Learned prediction improves control | **supported** — M2−M0 "
++                 f"{e23b['lo']:+.3f} to {e23b['hi']:+.3f} m, favourable in "
++                 f"{e23b['better']}/{e23b['n']} conditions, under the same recovery "
++                 f"structure, cost, constraints, allocator and supervisor |")
++    e24 = eff(pe, "no_impact-fallback_only") or eff(pe, "full-fallback_only")
++    if e24:
++        L.append(f"| MPC planning contributes | **not supported** — M2−M5 "
++                 f"{e24['lo']:+.3f} to {e24['hi']:+.3f} m against the same "
++                 f"context-conditioned feedforward, gate, allocator and supervisor. "
++                 f"The planning claim must be narrowed. |")
++    e25 = eff(pe, "full-full_no_check")
++    if e25:
++        z = abs(e25["lo"]) < 1e-9 and abs(e25["hi"]) < 1e-9
++        L.append(f"| Checking after allocation contributes | **not supported, with a "
++                 f"justified explanation** — isolated effect "
++                 f"{'exactly ' + format(e25['lo'], '+.5f') + ' m' if z else format(e25['lo'], '+.4f') + ' to ' + format(e25['hi'], '+.4f') + ' m'}"
++                 f". With the allowance on both conditions the test is redundant BY "
++                 f"CONSTRUCTION, not merely inactive; see §S0.4. |")
++    n_ts = sum(1 for c in CONDS if True)
++    ts = [tabval(tab, c, "full", "n_task_success") for c in CONDS]
++    ne = [tabval(tab, c, "full", "n_episodes") for c in CONDS]
++    if all(v == v for v in ts):
++        L.append(f"| The robot completes or recovers the task | **partial** — final-"
++                 f"target completion {int(sum(ts))}/{int(sum(ne))} for M3 under the "
++                 f"0.15 m / 5° / 2 s specification; ordered reacquisition and "
++                 f"maintenance are now scored separately and the specification sits "
++                 f"near the actuator quantisation floor (§6.1) |")
++    if s7b:
++        L.append(f"| The recovery condition is numerically useful | "
++                 f"**{'supported on a declared narrow domain' if s7b.get('accepted') else 'not supported'}** "
++                 f"— see §11 |")
++    else:
++        L.append("| The recovery condition is numerically useful | **not established** "
++                 "— see §11 |")
++    dms = rng_over_conds(tab, "full", "decision_ms_p95")
++    miss = rng_over_conds(tab, "full", "deadline_miss_rate")
++    if dms[0] == dms[0]:
++        L.append(f"| The implementation operates at 10 Hz | **partial** — complete "
++                 f"decision latency p95 {dms[0]:.1f}-{dms[1]:.1f} ms against the 100 ms "
++                 f"period, deadline misses {miss[0]:.1%}-{miss[1]:.1%}, but on a "
++                 f"simulation workstation, NOT the flight computer |")
++    L += ["", "The selected model is **M2** (dynamic context, prediction losses only): the "
++          "development", "grid chose behavioural weight zero. Its own comparisons are "
++          "therefore the primary ones, rather", "than inferred from M3's ablations.", "",
++          "| Comparison | healthy | actuator | perception | combined |", "|---|---:|---:|---:|---:|"]
++    for pair, lbl in (("no_impact-constant_context", "M2−M1 changing context"),
++                      ("no_impact-nominal_recovery", "M2−M0 learned residual"),
++                      ("no_impact-zero_context", "M2−HW vs hardware comparator"),
++                      ("no_impact-adaptive_mpc", "M2−M6 vs adaptive baseline"),
++                      ("no_impact-fallback_only", "M2−M5 MPC beyond fallback"),
++                      ("full-no_impact", "M3−M2 behavioural supervision"),
++                      ("full-no_alloc_aware", "M3−M7 allocation-aware selection"),
++                      ("full-full_no_check", "M3−M4 post-allocation check")):
++        cells = []
++        for c in CONDS:
++            st = pe.get(f"{pair}|{c}|post_onset_rmse")
++            if not st:
++                cells.append("n/a")
++                continue
++            sig = "" if st["lo"] <= 0 <= st["hi"] else "\\*"
++            cells.append(f"{st['mean']:+.3f}{sig}")
++        L.append(f"| {lbl} | " + " | ".join(cells) + " |")
++    L += ["", "Differences in metres of post-onset position RMSE on matched scenario "
++          "draws; negative favours", "the first method. `*` marks a 95% episode-"
++          "bootstrap interval excluding zero.", ""]
++
++    # hardware consistency, stated as consistency and not as replication
++    hwrel = []
++    for c in CONDS:
++        st = pe.get(f"no_impact-zero_context|{c}|post_onset_rmse")
++        base = tabval(tab, c, "zero_context", "post_onset_rmse")
++        if st and base == base and base:
++            hwrel.append((c, -st["mean"] / base))
++    if hwrel:
++        L += ["**Consistency with Table I.** The hardware reported learned-versus-zero-"
++              "context RMSE", "reductions of 14.0% (actuator 70%), 40.6% (actuator 30%) "
++              "and 57.9% (half-camera occlusion). The",
++              "corresponding simulated reductions of M2 over the same zero-context "
++              "comparator are "
++              + ", ".join(f"{c} {100 * v:.0f}%" for c, v in hwrel) + ".",
++              "Same sign in every condition and the same order of magnitude. This is "
++              "reported as consistency",
++              "of direction, **not** as replication: the fault populations, estimator "
++              "and task differ, and the",
++              "hardware trials ran an earlier controller.", ""]
++    L += ["", "---", ""]
++
++    # ================= §4 method definitions =================
++    L += ["## §4 Frozen method definitions", "", "**IMPLEMENTED.** Explicit IDs in "
++          "code, tables and logs. M4 retains source eligibility,",
++          "first-action screening, solver-failure handling and command admissibility, "
++          "and disables only",
++          "the post-allocation decrease test. M5 uses the same allocation-aware "
++          "realisation as M3, so",
++          "the MPC comparison differs by the optimisation alone.", "",
++          "Two IDs are **new**, because this campaign departs from the manuscript in "
++          "exactly two places",
++          "and the plan's standard is that each declared change carries its own "
++          "measured effect:", "",
++          "| ID | Definition | Measured effect vs M3 |", "|---|---|---|"]
++    for meth, desc in (("no_alloc_aware",
++                        "M3 without allocation-aware command selection: the affine "
++                        "or optimised wrench is requested directly"),
++                       ("strict_first_action",
++                        "M3 with the manuscript's allowance-free first-action "
++                        "condition restored")):
++        e = eff(pe, f"full-{meth}")
++        if e:
++            L.append(f"| {ID[meth]} | {desc} | {e['lo']:+.3f} to {e['hi']:+.3f} m; "
++                     f"M3 better in {e['better']}/{e['n']} |")
++    c8 = rng_over_conds(tab, "strict_first_action", "frac_src_candidate")
++    if c8[0] == c8[0]:
++        L += ["", f"M8 also shows what the allowance-free condition costs in "
++              f"attribution: the MPC candidate",
++              f"reaches the actuators on only {pct(c8[0])}-{pct(c8[1])} of steps under "
++              f"it, against {pct(cand[0])}-{pct(cand[1])} for M3.", ""]
++    L += ["**Outstanding.** The one-page method-to-equation map for Eqs. (2), (3), "
++          "(7), (8) and (15)-(19)",
++          "is not written, and the M1 arm is still broadcast from a single training "
++          "seed against three",
++          "dynamic-context seeds (recorded as `broadcast_side` in the artefact rather "
++          "than hidden).", "", "---", ""]
++
++    # ================= §5 S0.1-S0.4 =================
++    L += ["## §5 Simulation implementation corrections", ""]
++    L += ["### S0.1 One canonical learned model — **NOT IMPLEMENTED**", "",
++          "No credit claimed. There is still no single canonical `f_theta(x_hat, "
++          "u_nom_tx, z)` shared by",
++          "training targets, feedforward, affine prediction, derivative construction "
++          "and mismatch",
++          "evaluation, and the state-ordering permutation between manuscript and "
++          "repository has not been",
++          "implemented and tested. The residual is still evaluated once and held "
++          "across the horizon, which",
++          "the plan correctly says is not Eqs. (7)-(8).", "",
++          "This is now the largest remaining gap, and it is the most likely explanation "
++          "for the M3−M5",
++          "result: MPC planning is the one component whose value depends on the "
++          "horizon prediction being",
++          "right, and the horizon prediction is the part still not implemented as "
++          "specified.", ""]
++
++    L += ["### S0.2 Implement the stated optimisation — **PARTIAL**", "",
++          "**Done.** The first-action decrease condition of Eq. (15) is now enforced "
++          "rather than checked",
++          "afterwards. Because the feasible set `{u : ||A e + B(u-u_r) + d_r||_P <= "
++          "rho}` is convex, the",
++          "declared architecture is a proposal generator followed by an exact "
++          "projection onto the verified",
++          "set: with `M = P^{1/2}B`, the projection solves `min ||u-u_0||^2` subject to "
++          "`||M u + c|| <= rho`",
++          "by bisection on a scalar dual, each iteration a 3x3 solve. Input "
++          "admissibility is enforced on",
++          "every transmitted command against the true reachable set.", "",
++          "**A decisive negative finding.** The projection also reports when the "
++          "feasible set is EMPTY, and",
++          "on the allowance-free condition it is empty at **66.6%** of the states "
++          "visited in closed loop.",
++          "That is exact infeasibility — no admissible command satisfies the "
++          "inequality — not a failed",
++          "search. Eq. (15) as written is therefore not implementable on this vehicle; "
++          "see the manuscript",
++          "changes below.", "",
++          "**Outstanding.** The componentwise pseudo-Huber objective of Eq. (16) is "
++          "not implemented as",
++          "such; predicted-state region and terminal membership are not enforced "
++          "across the horizon; and",
++          "verifying the first action does not make the whole returned trajectory a "
++          "feasible solution of",
++          "Eq. (15), which the report states rather than glosses.", ""]
++
++    L += ["### S0.3 Causal execution and reference bookkeeping — **PARTIAL**", "",
++          "**Done.** Software-only `commit()` and evaluator-side `realize()` consuming "
++          "exactly one hidden",
++          "fault slot are retained (gates 2.4d/2.4f). The reference bug the plan "
++          "identified is fixed: the",
++          "runner stored `ref_prev[1]` in BOTH `log.ref` and `log.ref_next`, so the "
++          "\"current\" reference was",
++          "actually the successor and any analysis differencing the two saw an "
++          "identically zero reference",
++          "increment. `log.ref` now stores `r_now`. Only `ref_score` feeds reported "
++          "metrics, so no scored",
++          "quantity moved.", "",
++          "A correction to our own previous reply: it claimed these two fields were "
++          "already stored",
++          "separately. They were not. The plan's reading was right.", "",
++          "**Outstanding.** H+1 physical states and H+1 timestamped estimates are not "
++          "retained as a checked",
++          "invariant, and estimator update timing is not logged per command.", ""]
++
++    L += ["### S0.4 Validate the isolated post-allocation branch — **PARTIAL**", ""]
++    if e25:
++        L += ["The plan asks first what the allowance bounds, before manufacturing a "
++              "rejection. Answering",
++              "that question resolves the branch:", "",
++              "The sufficient redundancy condition is "
++              "`sup ||B(u_tx - u*)||_P <= eta` over feasible",
++              "candidates. Measured on this vehicle the allocation error is "
++              "**persistent** (ratio exactly",
++              "1.000 over 400 steps at fixed request) and about **6.3%** of the "
++              "commanded correction, while the",
++              "decrease inequality admits **0.94%** at λ≈0.99. So the uniform bound "
++              "does NOT hold at the",
++              "design η, and the additive model is the wrong one.", "",
++              "Under the declared modification — the allowance appears on both the "
++              "first-action and the",
++              "allocated-action right-hand sides, because both are evaluated on the "
++              "same realised command —",
++              "passing the first implies passing the second by construction. The "
++              f"isolated effect is therefore",
++              f"{e25['lo']:+.5f} m, and it is reported as **verified redundancy given "
++              f"the screening that",
++              "precedes it**, explicitly distinguished from mere empirical inactivity. "
++              "We did not shrink an",
++              "allowance to obtain a favourable ablation, and no hardware experiment "
++              "disables this check.", ""]
++    L += ["**Outstanding.** The plan's five-row branch table is not yet driven by "
++          "constructed software",
++          "fixtures with an independent evaluator reconstructing gate premises from "
++          "saved values. Gates",
++          "4.6a-4.6e cover parts of it, but they are not that table and the "
++          "controller's own Boolean",
++          "verdicts remain the primary evidence for some rows.", "", "---", ""]
++
++    # ================= §6 metrics =================
++    L += ["## §6 Shared metrics", "", "### 6.1 Endpoints — **IMPLEMENTED**", "",
++          "Physical state scores outcomes; the controller's checks use the estimate. "
++          "Primary endpoint is",
++          "post-onset position RMSE, declared before evaluation, with full-episode "
++          "RMSE secondary.",
++          "Completion requires the **final** intended target held for the declared "
++          "dwell. The 0.662 m",
++          "recovery threshold stays a separately labelled baseline-relative "
++          "diagnostic.", ""]
++    L += ["One physical finding the plan's tolerance discussion invites. The allocator "
++          "reaches its first",
++          "nonzero thrust at **0.288 N** — nearly a third of full authority — with a "
++          "grid spacing of about",
++          "0.093 N above that. A persistent half-cell bias of 0.046 N against a usable "
++          "proportional gain",
++          "of 0.5-2 N/m implies a steady offset of roughly 0.02-0.09 m, so the "
++          "declared 0.15 m tolerance",
++          "sits close to the quantisation floor rather than comfortably above it. We "
++          "did **not** change the",
++          "specification after seeing results; it is retained as declared, and this is "
++          "recorded as the",
++          "physical reason completion is hard.", ""]
++    L += ["### 6.2 Recovery ordering — **IMPLEMENTED**", ""]
++    if s0:
++        for key in ("5.1a", "5.1b"):
++            hit = [v for k, v in s0["checks"].items() if k.startswith(key)]
++            if hit:
++                L.append(f"- Gate `{key}`: **{'PASS' if hit[0]['pass'] else 'FAIL'}** "
++                         f"— {hit[0]['detail']}")
++        L.append("")
++    L += ["The plan's pseudocode is implemented literally in `score_recovery`: "
++          "membership from the declared",
++          "tolerance, clock at onset, maintenance only when inside at onset with a "
++          "complete window and no",
++          "later excursion, otherwise locate the excursion and search for a qualifying "
++          "dwell strictly",
++          "after it. Both clocks (`t_from_onset`, `t_from_excursion`), both dwell "
++          "endpoints, and",
++          "`departed_again` are recorded, and an incomplete window is **censored** "
++          "rather than credited as",
++          "maintenance. The dwell is 21 observations, since 2 s at 10 Hz spans 20 "
++          "intervals; the previous",
++          "20-observation dwell silently asked for 1.9 s.", "",
++          "### 6.3-6.4 Fair horizons and logging schema — **PARTIAL**", "",
++          "Identical task duration, deadline and reference policy across methods; "
++          "position-triggered",
++          "switches are recorded rather than claimed identical; failures stay in the "
++          "denominators.",
++          "Complete decision latency and deadline status are now logged (§12). Vicon "
++          "validity criteria and",
++          "the attempt ledger are hardware items and are not applicable here.", "",
++          "---", ""]
++
++    # ================= §9 diagnose =================
++    L += ["## §9 Diagnose before scaling — **DIAGNOSED**", "",
++          "### S1.1 Supervisor dominance", "",
++          "The plan asked which of four causes it was: fallback failing decrease, "
++          "state outside the",
++          "admitted region, solver infeasible, or candidate failing first-action "
++          "screening. Independent",
++          "counters were added for each, which the previous single \"ineligible\" "
++          "counter could not separate.",
++          "Measured over 4,800 control steps before the fix:", "",
++          "| Cause | Share of steps |", "|---|---|",
++          "| fallback command judged inadmissible | **49.6%** |",
++          "| fallback failed the decrease test | 2.8% |",
++          "| state outside the eligible radius | **0.0%** |",
++          "| solver failure or deadline | 0.0% |", "",
++          "So it was one cause, and it was a defect: the admissibility budget, not the "
++          "gate, not the",
++          "decrease test, not the solver. Correcting it moved eligibility from 48.2% "
++          "to 96.2% of steps.",
++          "We changed one diagnosed cause at a time and did not enlarge the gate or "
++          "the allowance to",
++          "improve the MPC percentage. The supervisor rule itself is unchanged and "
++          "identical across methods.",
++          "", "### S1.2 Transfer failure — **PARTIAL**", ""]
++    if s8 and s8.get("ood", {}).get("table"):
++        ot = s8["ood"]["table"]
++        tr = {k: v for k, v in ot.items() if k.startswith("transfer_ref|")}
++        if tr:
++            conds, meths = [], []
++            for k in tr:
++                _, c, m = k.split("|")
++                if c not in conds:
++                    conds.append(c)
++                if m not in meths:
++                    meths.append(m)
++            L += ["Transfer is re-evaluated under the corrected controller. Held-out "
++                  "reference-family position RMSE in metres, by fault condition:", "",
++                  "| Method | " + " | ".join(conds) + " |",
++                  "|---" + "|---:" * len(conds) + "|"]
++            for m in meths:
++                cells = []
++                for c in conds:
++                    v = tr.get(f"transfer_ref|{c}|{m}")
++                    cells.append("n/a" if v is None
++                                 else f"{v['rmse_pos']['mean']:.3f}")
++                L.append(f"| {ID.get(m, m)} | " + " | ".join(cells) + " |")
++            L += ["", "The held-out family remains harder for every method, including "
++                  "the hardware-matched",
++                  "comparator, so this is a property of the reference family and not of "
++                  "the learned residual",
++                  "alone. That is the reason the attribution below stays open.", ""]
++    L += ["Reference feasibility under the actual impulse authority and the "
++          "action-source changes relative",
++          "to in-distribution cases are now inspectable, but the coordinate/wrapping "
++          "audit, the frozen-",
++          "context multistep prediction study and the normalised-input range check are "
++          "not done. The",
++          "attribution therefore remains open, and we do **not** claim the neural "
++          "residual alone causes it.",
++          "", "---", ""]
++
++    # ================= §11 certificate =================
++    L += ["## §11 One useful recovery-bound demonstration", ""]
++    if s7b and s7b.get("accepted"):
++        d = s7b
++        L += ["**IMPLEMENTED — a nonempty, calibration-accepted region exists on a "
++              "declared narrow domain.**", "",
++              "This is the result that changes the paper's guarantee claim from empty "
++              "to scoped-and-useful.",
++              "It required identifying WHY the 2,730-cell sweep was empty, which was "
++              "not a search problem:",
++              "", "| Quantity | Value | Note |", "|---|---:|---|",
++              f"| domain | station keeping | held setpoint and heading; b_r = 0 by "
++              f"construction |",
++              f"| λ (verified by interval enclosure) | {d['frozen_design']['lam']:.4f} "
++              f"| γ={d['frozen_design']['gamma_max']:.4f}, "
++              f"ν={d['frozen_design']['nu_max']:.4f} over ±{d['domain']['span']:.0%} "
++              f"mass/inertia |",
++              f"| R_max | {d['R_max']:.3f} | min of input, corridor and chart radii |",
++              f"| admissible prediction budget | {d['budget_for_d']:.5f} | "
++              f"R_max(1−λ) − b_r |",
++              f"| calibrated d_cert (δ={d['delta']}) | {d['d_cert_calibrated']:.5f} | "
++              f"rank {d['conformal_rank']}/{d['n_calib']} of per-EPISODE maxima |",
++              f"| s_cert | {d['s_cert']:.4f} | (b_r + d_cert)/(1−λ) |",
++              f"| strict margin | {d['margin']:+.4f} | R_max − s_cert |",
++              f"| test-set violations | {d['test_violations']}/{d['n_test']} | "
++              f"nominal allowance {d['delta']:.1%} |",
++              f"| position projection | ≤ {d['position_bound_m']:.3f} m | physical "
++              f"meaning of the certified region |", "",
++              "**What is verified versus calibrated.** λ comes from the interval "
++              "enclosure, so the",
++              "contraction factor is verified over the declared parameter domain. The "
++              "prediction budget is",
++              "*calibrated*, so the statement is the manuscript's marginal (1−δ) "
++              "statement over the",
++              "simulated population, not a deterministic bound. Per the plan, the "
++              "score is one maximum per",
++              "complete episode — a per-timestep quantile of the same quantity is "
++              "roughly 30% smaller and",
++              "would not be the paper's procedure. Calibration and test episodes are "
++              "disjoint and the policy",
++              "was frozen before either was generated.", ""]
++        for lim in d.get("scope_limits", []):
++            L.append(f"- {lim}")
++        L.append("")
++    elif s7b:
++        L += ["**NOT IMPLEMENTED — no accepted region survived, and the reason is now "
++              "identified.**", "",
++              f"{s7b.get('claim', '')}", "",
++              "The failure is no longer a bare unsuccessful sweep. Two obstructions "
++              "are quantified:", "",
++              "- **Reference defect.** b_r is 29.7 on the hardware-matched `step` "
++              "family against an input",
++              "  radius of 1.4, because that family contains a 1.0 m setpoint jump "
++              "inside one 0.1 s sample.",
++              "  No bounded input follows a discontinuous reference, so no "
++              "(P, K, λ) cell could ever have",
++              "  certified it. On a smooth feasible reference the same quantity is "
++              "0.096; on a held setpoint,",
++              "  exactly 0.",
++              "- **Contraction rate.** Deadbeat gains for this plant are ≈2500 N/m "
++              "and saturate 0.96 N at",
++              "  0.4 mm of position error, so per-step contraction faster than "
++              "λ≈0.99 is physically",
++              "  unusable and 1/(1−λ)≈100 amplifies every per-step term.", "",
++              "We report the failed sufficient-condition search under its proper "
++              "scope. It does not prove",
++              "physical impossibility, and it does not establish a necessary "
++              "mass-identification tolerance.",
++              ""]
++    else:
++        L += ["**NOT IMPLEMENTED.** The scoped verification track did not produce an "
++              "artefact for this run.",
++              ""]
++
++    if rsz:
++        L += ["### Why the guarantee is not useful here, with a mechanism", "",
++              "The plan asks for interpretable physical bounds and nontrivial eligible "
++              "operation, not just a",
++              "positive radius. Converting the verified radii into physical units "
++              "explains the whole result:",
++              "", "| Design | λ | R_max | position | velocity | yaw |",
++              "|---|---:|---:|---:|---:|---:|"]
++        for r in rsz["regions"]:
++            L.append(f"| λ₀={r['lam0']}, w={r['w']:.0e} | {r['lam']:.4f} | "
++                     f"{r['R_max']:.3f} | {r['pos_cm']:.1f} cm | "
++                     f"{r['vel_cm_s']:.2f} cm/s | {r['yaw_deg']:.0f}° |")
++        L += ["", "These are **pure-axis extremes**; the region is their intersection "
++              "and so jointly smaller.", "",
++              f"Against that, the measured actuator floor: the first reachable thrust "
++              f"above zero is",
++              f"**{rsz['first_reachable_thrust_N']} N**, which is "
++              f"{rsz['frac_of_authority']:.0%} of full authority, with a "
++              f"{rsz['grid_spacing_N']} N grid above it. A",
++              f"persistent half-cell bias against a usable proportional gain sustains a "
++              f"steady offset of",
++              f"{rsz['steady_offset_cm_range'][0]:.0f}-"
++              f"{rsz['steady_offset_cm_range'][1]:.0f} cm.", "",
++              "So the certified ball is **the same size as, or smaller than, the "
++              "vehicle's own",
++              "quantisation-driven limit cycle**. The closed loop cannot remain inside "
++              "the region it",
++              "certifies, which is exactly why recovery-active coverage is ~0% and why "
++              "a calibration run",
++              "over those episodes scores zero active transitions. A nonempty region "
++              "that the vehicle never",
++              "occupies certifies nothing about the vehicle, and we do not report it as "
++              "a success.", "",
++              "**This is a mechanism, not a shrug, and it is actionable.** The "
++              "obstruction is actuator",
++              "quantisation relative to the achievable per-step contraction — not the "
++              "theory and not the",
++              "search. What would make the guarantee useful is finer thrust "
++              "granularity: a smaller minimum",
++              "impulse bit, a higher PWM rate, or proportional thrusters. Stating that "
++              "requirement is a more",
++              "useful contribution than an empty sweep, and it is a concrete answer to "
++              "the reviewer question",
++              "\"is the theoretical construction useful?\"", ""]
++    L += ["---", ""]
++
++    # ================= §12 compute =================
++    L += ["## §12 Compute and mechanism measurements — **PARTIAL**", ""]
++    if dms[0] == dms[0]:
++        L += ["Complete decision latency is now timed across context inference, the "
++              "residual, feedforward,",
++              "fallback allocation, optimisation, allocation-aware selection and every "
++              "check — not the",
++              "solver's reported duration, which omitted everything the learned "
++              "components add.", "",
++              "| Condition | p50 | p95 | p99 | max | deadline misses |",
++              "|---|---:|---:|---:|---:|---:|"]
++        for c in CONDS:
++            L.append(f"| {c} | {tabval(tab, c, 'full', 'decision_ms_p50'):.1f} | "
++                     f"{tabval(tab, c, 'full', 'decision_ms_p95'):.1f} | "
++                     f"{tabval(tab, c, 'full', 'decision_ms_p99'):.1f} | "
++                     f"{tabval(tab, c, 'full', 'decision_ms_max'):.1f} | "
++                     f"{tabval(tab, c, 'full', 'deadline_miss_rate'):.2%} |")
++        L += ["", "All figures are milliseconds against the 100 ms period, measured on "
++              "a **simulation",
++              "workstation**. The plan is explicit that a real-time claim needs the "
++              "deployment computer, so",
++              "this supports feasibility of the computation, not a flight timing "
++              "claim. Cold starts are not",
++              "separated from steady operation.", ""]
++    L += ["Action fractions use a common denominator of all control steps, with "
++          "first-action rejection,",
++          "post-allocation decrease rejection, input-admissibility rejection, "
++          "solver/deadline fallback and",
++          "supervisor kept separate. The earlier 3-4% input-budget rejection is no "
++          "longer described as the",
++          "decrease-check rejection.", "", "---", ""]
++
++    # ================= manuscript changes =================
++    L += ["## Manuscript and theorem changes these measurements force", "",
++          "The plan's §14 asks for contribution statements aligned to observed "
++          "effects. Four changes are",
++          "needed. Two are scope restrictions, one is an equation change, one is a "
++          "withdrawn claim.", "",
++          "### 1. Eq. (15): the first-action condition needs the implementation "
++          "allowance", "",
++          "**Change.** Give the first-action decrease condition the same allowance η "
++          "as the allocated-action",
++          "condition, or equivalently state both as one condition on the realised "
++          "command.", "",
++          "**Why.** The manuscript's allowance-free form presumes the planned first "
++          "input is applied",
++          "exactly. It is not: the command reaches the thrusters through a duty-"
++          "quantised allocator whose",
++          "error is persistent and about 6.3% of the commanded correction. With no "
++          "allowance the feasible",
++          "set is **empty at 66.6% of visited states** by exact projection. An "
++          "unimplementable constraint",
++          "is worse than a weaker one, and a reviewer who tries to implement Eq. (15) "
++          "as written will find",
++          "this immediately.", "",
++          "**Consequence to state plainly.** Eqs. (15) and (18) then become the same "
++          "test, so the",
++          "post-allocation check is redundant *by construction*. Report it as verified "
++          "redundancy over the",
++          "declared domain and drop any claim of a measured performance benefit from "
++          "it.", "",
++          "### 2. The recovery guarantee holds on smooth/station-keeping references, "
++          "not on setpoint jumps",
++          "",
++          "**Change.** State the certificate over a domain of feasible references and "
++          "exclude discontinuous",
++          "setpoint changes explicitly.", "",
++          "**Why.** b_r = 29.7 for a 1.0 m jump in one 0.1 s sample versus an input "
++          "radius of 1.4 — the",
++          "condition fails by a factor of 20 for a purely kinematic reason. The same "
++          "quantity is 0.096 on a",
++          "smooth feasible reference and 0 on a held setpoint. This is a scope "
++          "statement the theory always",
++          "needed, not a retreat: no bounded-input controller can contract toward a "
++          "discontinuous reference.",
++          "", "### 3. Replace the uniform allocation-error allowance with an online "
++          "reachability premise", "",
++          "**Change.** Where the manuscript assumes a uniform bound "
++          "`sup ||B(u_tx − u*)||_P <= eta` over all",
++          "feasible candidates, substitute the premise that a **reachable** "
++          "transmitted command satisfying",
++          "the decrease inequality exists, verified online each step.", "",
++          "**Why.** The uniform bound is false here (6.3% versus the 0.94% admitted), "
++          "so any theorem resting",
++          "on it is unsound for this vehicle. The replacement is *weaker, checkable, "
++          "and satisfied*: the",
++          "allocation map is deterministic and computed before transmission, so the "
++          "controller can select",
++          "the request whose realisation satisfies the inequality. Measured "
++          "satisfaction rises from 24-49%",
++          "to 92-100%. This is also the campaign's clearest positive engineering "
++          "contribution, and it has",
++          "its own ablation (M7).", "",
++          "### 4. Withdraw the behavioural-supervision benefit claim", ""]
++    if e22:
++        L += [f"**Change.** Present the behavioural loss as an ablation that did not "
++              f"help ({e22['lo']:+.3f} to",
++              f"{e22['hi']:+.3f} m, worse in {e22['worse']}/{e22['n']} conditions, "
++              f"development weight selected at zero), and rest the",
++              "context-learning contribution on dynamic context versus trained "
++              "constant context, which is",
++              "supported. Per the plan, do not replace an unsupported specific claim "
++              "with an equally",
++              "unsupported broad one.", ""]
++    L += ["### Also narrow, do not delete", "",
++          "- **Planning.** M3 does not beat M5 under matched everything, so the MPC "
++          "claim must be narrowed to",
++          "  what the architecture actually contributes. Note honestly that S0.1 is "
++          "outstanding and the",
++          "  horizon prediction is exactly the part not yet implemented as specified, "
++          "so this is a result",
++          "  about *this* implementation of planning.",
++          "- **Hardware.** Table I stays the primary physical evidence and is "
++          "untouched. The simulation",
++          "  repairs change no recorded hardware datum. The learned-versus-zero-"
++          "context direction in",
++          "  simulation now agrees with the hardware direction, which is worth stating "
++          "as consistency, not",
++          "  as replication.", "", "---", ""]
++
++    # ================= not done =================
++    L += ["## What is deliberately not claimed", "",
++          "| Plan item | Status |", "|---|---|",
++          "| §7-8 hardware ledger, provenance, prospective matched campaign | **NOT "
++          "APPLICABLE** — needs hardware and records this work has no access to. The "
++          "N=10 vs N=12 horizon must still be resolved from the flight configuration; "
++          "simulation shows the choice is not load-bearing but that does not establish "
++          "equivalence. |",
++          "| §5/S0.1 canonical model, context-conditioned feedforward, Eqs. (7)-(8) "
++          "across the horizon | **NOT IMPLEMENTED** — the largest remaining gap, and "
++          "the most likely cause of the M3−M5 result |",
++          "| §5/S0.2 componentwise pseudo-Huber, predicted-state region and terminal "
++          "membership | **NOT IMPLEMENTED** |",
++          "| §5/S0.4 constructed branch fixtures with an independent evaluator | "
++          "**PARTIAL** |",
++          "| §10/S2 five training seeds; balanced seeds for the constant-context arm | "
++          "**PARTIAL** — three seeds, M1 still broadcast |",
++          "| §13 corrected architecture figure; `oracle` relabelled `hand-tuned "
++          "context`; neural-ODE literature | **NOT IMPLEMENTED** |",
++          "", "---", ""]
++
++    # ================= decisions =================
++    L += ["## §14 Where this leaves the paper", "",
++          "On the plan's own decision table, this is the **\"dynamic context helps, "
++          "behavioural loss does",
++          "not\"** row, plus **\"post-allocation check remains inactive\"** and "
++          "**\"MPC does not improve over",
++          "matched fallback\"**, and "
++          + ("**a scoped certificate that now exists**."
++             if (s7b and s7b.get("accepted")) else
++             "**a certificate that remains empty, with its emptiness explained**.")
++          + " The", "defensible contribution statement is:", "",
++          "1. Multimodal context inference from recent history improves fault-tolerant "
++          "tracking over a",
++          "   trained constant-context representation and over nominal prediction, "
++          "under matched controller,",
++          "   cost, constraints, allocator, gate and supervisor — in simulation, and "
++          "consistently with the",
++          "   direction of the hardware result.",
++          "2. Allocation-aware command selection makes a per-step decrease condition "
++          "implementable on a",
++          "   pulsed, low-authority thruster system, where the uniform additive "
++          "allowance it replaces is",
++          "   provably unattainable. This is new, measured, and ablated.",
++          "3. The hardware demonstration remains the primary physical evidence for "
++          "coupled actuation and",
++          "   perception adaptation.",
++          "4. Negative, useful results: the behavioural objective does not help; the "
++          "post-allocation check",
++          "   is redundant given the screening ahead of it; MPC planning does not beat "
++          "its matched",
++          "   fallback in this implementation.", "",
++          "That is a coherent RA-L paper. It is a different paper from the one whose "
++          "abstract advertises a",
++          "behavioural loss and a general recovery guarantee, and the honest version "
++          "is the one that will",
++          "survive review — a reviewer who reimplements Eq. (15) as written will find "
++          "it infeasible at two",
++          "thirds of states, and that is much worse to discover in review than to "
++          "state up front.", ""]
++
++    with open(OUT, "w") as f:
++        f.write("\n".join(L) + "\n")
++    print(f"wrote {OUT} ({len(L)} lines)")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/stage9_figures.py b/stage9_figures.py
+index e67ce5e..cf58823 100644
+--- a/stage9_figures.py
++++ b/stage9_figures.py
+@@ -46,11 +46,14 @@ METHOD_LABEL = {
+     "full_no_check": "M4  M3, no post-alloc check",
+     "fallback_only": "M5  checked fallback only",
+     "adaptive_mpc": "M6  adaptive MPC",
++    "no_alloc_aware": "M7  no alloc-aware selection",
++    "strict_first_action": r"M8  strict Eq. (15), no $\eta$",
+ }
+ MC = {"zero_context": "#7f7f7f", "nominal_recovery": "#2ca02c",
+       "constant_context": "#9467bd", "adaptive_mpc": "#8c564b",
+       "no_impact": "#1f77b4", "full": "#d62728",
+-      "full_no_check": "#ff9896", "fallback_only": "#17becf"}
++      "full_no_check": "#ff9896", "fallback_only": "#17becf",
++      "no_alloc_aware": "#e377c2", "strict_first_action": "#bcbd22"}
+ COND_LABEL = {"healthy": "healthy", "actuator": "actuation fault",
+               "perception": "perception degr.", "combined": "combined"}

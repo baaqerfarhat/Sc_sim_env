@@ -1,0 +1,437 @@
+{
+ "stage": "pathb0_freeze",
+ "git_commit": "9e2af1607dfe5f90a76bf796b293436d71fab7ad",
+ "git_dirty": true,
+ "config_manifest_hash": "07f277768a04859a",
+ "sec3_provenance": {
+  "checks": [
+   {
+    "check": "3.1a both referenced commits exist and are parent/child, not rivals",
+    "pass": true,
+    "detail": "81f52657 is the PARENT of 9e2af160: True.\nThe run identity recorded the base commit with a dirty tree; the audit guide cited the\ncommit that tree became. They are the same work at two points, not two different sources."
+   },
+   {
+    "check": "3.1b the historical dirty patch is RECOVERED, not declared unavailable",
+    "pass": true,
+    "detail": "The dirty working tree was committed as 9e2af160, so the patch is exactly\n`git diff 81f52657 9e2af160 -- '*.py'`. Archived to results/pathb_historical_dirty_patch.diff\nSHA-256 2f5589bcc4380dc1208f8cd9bc1d4362ba7c2438f05c40651d32f1f3a1835829\n9 source files: run_all.py, scsim/controllers.py, scsim/reference.py, scsim/runner.py, stage0_semantics.py, stage6_methods.py, stage7_scoped.py, stage9_execution_response.py, stage9_figures.py"
+   },
+   {
+    "check": "3.1c the v4 artefacts are CORRECTED-CONTRACT, established from source history",
+    "pass": true,
+    "detail": "The split of software `commit` from physical `realize` entered at 24a42ac\n(\"v3: unified execution contract, single-component M4, final-waypoint task, dual horizon\"), which is an ANCESTOR of the v4 base 81f52657: True.\nEvery artefact produced at or after that base therefore ran the unified contract.\nThe stale narrative subsection asserting an unresolved mismatch is wrong about the code;\nthe results are not wrong. Classification: corrected-contract, NOT unknown."
+   },
+   {
+    "check": "3.1d the saved Stage 6 artefact is mapped to that source by its OWN contents",
+    "pass": true,
+    "detail": "The artefact contains the M7/M8 rows and an M3 candidate share of 0.898.\nBoth are producible only by the child commit's controller: the ablations do not exist\nearlier, and the pre-repair candidate share was 0.08-0.13. This is artefact evidence,\nnot an inference from prose."
+   }
+  ],
+  "dirty_patch_sha256": "2f5589bcc4380dc1208f8cd9bc1d4362ba7c2438f05c40651d32f1f3a1835829",
+  "dirty_patch_files": [
+   "run_all.py",
+   "scsim/controllers.py",
+   "scsim/reference.py",
+   "scsim/runner.py",
+   "stage0_semantics.py",
+   "stage6_methods.py",
+   "stage7_scoped.py",
+   "stage9_execution_response.py",
+   "stage9_figures.py"
+  ],
+  "artefact_evidence": {
+   "method_ids_present": [
+    "HW",
+    "M0",
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M7",
+    "M8"
+   ],
+   "m3_candidate_share": 0.897849537037037,
+   "manifest_hash": "07f277768a04859a"
+  },
+  "classification": "corrected-contract",
+  "commits": {
+   "v4_base": "81f52657c7d16d8377ac0812d13295410de377a7",
+   "v4_committed": "9e2af1607dfe5f90a76bf796b293436d71fab7ad",
+   "contract_split": "24a42ac7bae950d888c9ce961432cd02638fbe15"
+  }
+ },
+ "sec3_2_contract": {
+  "checks": [
+   {
+    "check": "3.2 hidden impairment never enters controller-visible history",
+    "pass": true,
+    "detail": "1/1 sub-gates: 2.4a"
+   },
+   {
+    "check": "3.2 the hidden fault does change the physical successor",
+    "pass": true,
+    "detail": "1/1 sub-gates: 2.4b"
+   },
+   {
+    "check": "3.2 data generation and policy execution consume the same fault slot",
+    "pass": true,
+    "detail": "1/1 sub-gates: 2.4f"
+   },
+   {
+    "check": "3.2 commit updates allocator memory only; realize owns the fault slot",
+    "pass": true,
+    "detail": "1/1 sub-gates: 2.4d"
+   },
+   {
+    "check": "3.2 trial mutates neither allocator state nor fault phase",
+    "pass": true,
+    "detail": "1/1 sub-gates: 2.4c"
+   },
+   {
+    "check": "3.2 physical force rotates with TRUE yaw",
+    "pass": true,
+    "detail": "1/1 sub-gates: 3.4a"
+   },
+   {
+    "check": "3.2 the estimate cannot touch the physics",
+    "pass": true,
+    "detail": "1/1 sub-gates: 3.4b"
+   },
+   {
+    "check": "3.2 fallback acceptance is enforced and every command has one source",
+    "pass": true,
+    "detail": "5/5 sub-gates: 4.6a; 4.6b; 4.6c; 4.6d; 4.6e"
+   },
+   {
+    "check": "3.2 ordered recovery scoring",
+    "pass": true,
+    "detail": "2/2 sub-gates: 5.1a; 5.1b"
+   },
+   {
+    "check": "3.2 current and successor references are stored separately",
+    "pass": true,
+    "detail": "on `smooth_dock`, whose reference moves every sample, max |ref - ref_next| = 0.006873.\nBoth fields previously received the successor, so any analysis differencing them saw\nan identically zero reference increment. Checked on a moving reference because on\nthe `step` family the two are legitimately equal and the test would pass vacuously."
+   },
+   {
+    "check": "3.2 task success is evaluated at the FINAL intended goal",
+    "pass": true,
+    "detail": "final_target recorded as [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], and\n`pathb_common.episode_metrics` scores completion against it rather than against\nwhichever setpoint happened to be current."
+   }
+  ]
+ },
+ "sec5_features": {
+  "checks": [
+   {
+    "check": "5.1 the feature vector is 18 channels over 11 causal tokens",
+    "pass": true,
+    "detail": "18 channels x 11 tokens. The streams are estimator diagnostics,\nestimated motion and commands. There is NO image encoder and no independently\ntokenised per-sensor encoder, and the manuscript must not imply that either was\nevaluated."
+   },
+   {
+    "check": "5.1 N (MPC preview) and H (training rollout depth) are distinct",
+    "pass": true,
+    "detail": "N = 12 so a preview holds N+1 = 13 reference/state indices;\nH = 5 is the learned-model training rollout depth. Both are recorded per\nepisode as `mpc_horizon_N` and `train_rollout_depth_H`, so an H+1 array can never\nbe labelled a controller preview."
+   },
+   {
+    "check": "5.2 FEATURE_SCALE is disclosed as HARDCODED, not training-computed",
+    "pass": true,
+    "detail": "HARDCODED constants, frozen and disclosed. NOT computed from the training split.\nvalues = [0.30000001192092896, 0.30000001192092896, 1.0, 0.20000000298023224, 0.20000000298023224, 0.10000000149011612, 0.10000000149011612, 0.10000000149011612, 0.10000000149011612, 1.0, 1.0, 0.4000000059604645, 0.20000000298023224, 0.20000000298023224, 0.10000000149011612, 0.10000000149011612, 0.10000000149011612, 0.10000000149011612]\nFrozen for this campaign so M1/M2/M3/M4/M-motion stay comparable. Switching to\ntrain-set-only normalisation would be a new pipeline version requiring every\nlearned method to be retrained; that is NOT done here."
+   },
+   {
+    "check": "5.3 the M-motion mask removes exactly the 3 diagnostic channels",
+    "pass": true,
+    "detail": "mask = [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]\nDrops the two innovation scalars and the validity scalar; retains state\nincrements, previous transmitted command and nominal residual. It is NOT a\nvision-free controller: the retained channels are computed from the vision-based\nestimator, so the claim is limited to the EXPLICIT diagnostic channels."
+   }
+  ],
+  "feature_groups": [
+   {
+    "name": "innovation",
+    "slice": [
+     0,
+     2
+    ],
+    "n": 2,
+    "description": "estimator innovation diagnostic scalars"
+   },
+   {
+    "name": "validity",
+    "slice": [
+     2,
+     3
+    ],
+    "n": 1,
+    "description": "pose-availability scalar"
+   },
+   {
+    "name": "state_increment",
+    "slice": [
+     3,
+     9
+    ],
+    "n": 6,
+    "description": "estimated-state increments"
+   },
+   {
+    "name": "prev_command",
+    "slice": [
+     9,
+     12
+    ],
+    "n": 3,
+    "description": "previous transmitted nominal-equivalent command"
+   },
+   {
+    "name": "nominal_residual",
+    "slice": [
+     12,
+     18
+    ],
+    "n": 6,
+    "description": "nominal prediction-residual components"
+   }
+  ],
+  "n_feat_per_step": 18,
+  "n_tokens": 11,
+  "feature_scale": [
+   0.30000001192092896,
+   0.30000001192092896,
+   1.0,
+   0.20000000298023224,
+   0.20000000298023224,
+   0.10000000149011612,
+   0.10000000149011612,
+   0.10000000149011612,
+   0.10000000149011612,
+   1.0,
+   1.0,
+   0.4000000059604645,
+   0.20000000298023224,
+   0.20000000298023224,
+   0.10000000149011612,
+   0.10000000149011612,
+   0.10000000149011612,
+   0.10000000149011612
+  ],
+  "feature_scale_provenance": "HARDCODED constants, frozen and disclosed. NOT computed from the training split.",
+  "mpc_horizon_N": 12,
+  "train_rollout_depth_H": 5,
+  "motion_only_mask": [
+   0,
+   0,
+   0,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1,
+   1
+  ]
+ },
+ "sec6_population": {
+  "checks": [
+   {
+    "check": "6.1 Path B scenario keys are disjoint from every archived block",
+    "pass": true,
+    "detail": "Blocks {'feasibility': 700000, 'smoke': 710000, 'stopgate': 720000, 'calibration': 730000, 'test': 800000}\nchecked against archived usage (stage5 data 10000-10359, stage6 calibration\n10000-10024, stage6/8 test 20000-20059, stage7b 1000-1080 and 5000-5040):\ncollisions none; block overlaps none."
+   },
+   {
+    "check": "6.1 the population law is machine-readable and hashed",
+    "pass": true,
+    "detail": "5 exogenous variables with explicit law, support, unit and\ndraw order; condition overrides, the actuator counter law, the duty law and its\noperation order, and the deterministic initial state are all encoded.\nSHA-256 b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634"
+   }
+  ],
+  "population_sha256": "b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634",
+  "manifests": {
+   "calibration": {
+    "block": "calibration",
+    "n_per_cell": 25,
+    "families": [
+     "step",
+     "smooth_dock"
+    ],
+    "conditions": [
+     "healthy",
+     "actuator",
+     "perception",
+     "combined"
+    ],
+    "n_units": 200,
+    "sha256": "74bf5e7edad591a1cc572223af45c28ca8c5f5d409b4c29cec5af209447e41e0",
+    "population_sha256": "b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634"
+   },
+   "test": {
+    "block": "test",
+    "n_per_cell": 60,
+    "families": [
+     "step",
+     "smooth_dock"
+    ],
+    "conditions": [
+     "healthy",
+     "actuator",
+     "perception",
+     "combined"
+    ],
+    "n_units": 480,
+    "sha256": "01d416add89f07818ce837a29fbfa07b9d34b0b8703b02d436baf2aa58a0cf2d",
+    "population_sha256": "b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634"
+   }
+  }
+ },
+ "sec6_tasks": {
+  "checks": [
+   {
+    "check": "6.2 the step switch rule is a one-coordinate test, not a distance",
+    "pass": true,
+    "detail": "|y - y_wp1| < 0.15 m, evaluated on the y coordinate alone. It is a\nreference-transition rule and is deliberately distinct from the completion test,\nwhich is evaluated at the final waypoint with a yaw condition and a dwell."
+   },
+   {
+    "check": "6.3 the smooth task is continuous in every required derivative",
+    "pass": true,
+    "detail": "verified numerically by the Sec 6.4 gate; see pathb_taskgate.json"
+   },
+   {
+    "check": "9.4 the dwell convention is stated once, as 2.1 s = 22 observations",
+    "pass": true,
+    "detail": "22 consecutive observations span 21 intervals = 2.1 elapsed seconds at exactly 10 Hz, by logged timestamps.\nThe archive used 21 observations and labelled the result 2.1 s. 21 observations span 2.0 s. Sec 9.4's preferred freeze preserves the elapsed-time meaning, so the count is 22. The endpoint is never reported under both conventions."
+   }
+  ],
+  "task_spec": {
+   "tol_pos_m": 0.15,
+   "tol_yaw_deg": 5.0,
+   "dwell_observations": 22,
+   "dwell_elapsed_s": 2.1,
+   "deadline_s": 60.0,
+   "convention": "22 consecutive observations span 21 intervals = 2.1 elapsed seconds at exactly 10 Hz, by logged timestamps.",
+   "changed_from_archive": "The archive used 21 observations and labelled the result 2.1 s. 21 observations span 2.0 s. Sec 9.4's preferred freeze preserves the elapsed-time meaning, so the count is 22. The endpoint is never reported under both conventions.",
+   "provenance": "Provisional engineering thresholds carried over from the development JSON, frozen before the prospective manifest was generated, and NOT measured spacecraft requirements. Retained unchanged after seeing archived outcomes.",
+   "scope": "A sampled task-completion endpoint. NOT an intersample guarantee."
+  },
+  "family_A": {
+   "name": "step",
+   "wp1": [
+    0.0,
+    -2.0
+   ],
+   "wp2": [
+    1.0,
+    -2.0
+   ],
+   "switch_rule": "|y - y_wp1| < 0.15 m",
+   "final_target": [
+    1.0,
+    -2.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "family_B": {
+   "name": "smooth_dock",
+   "version": "smooth_dock_v1",
+   "duration_s": 30.0,
+   "pre_dock_offset": [
+    0.6,
+    0.6
+   ],
+   "pre_dock_yaw_deg": 29.999999999999996,
+   "final_offset": [
+    1.0,
+    0.0
+   ],
+   "final_target": [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "provenance": "engineering design declared in plan Sec 6.3; NOT extracted from any hardware mission"
+  }
+ },
+ "n_checks": 24,
+ "n_pass": 24,
+ "blocking_pass": true,
+ "method_matrix": {
+  "M0": {
+   "policy": "nominal_recovery",
+   "tag": "full",
+   "seeded": false,
+   "label": "nominal, no learned residual or context",
+   "purpose": "isolates the learned predictor from the rest of the controller",
+   "opts": {}
+  },
+  "M1": {
+   "policy": "constant_context",
+   "tag": "const",
+   "seeded": true,
+   "label": "trained constant context",
+   "purpose": "fair static learned-model baseline",
+   "opts": {}
+  },
+  "M2": {
+   "policy": "no_impact",
+   "tag": "no_impact",
+   "seeded": true,
+   "label": "changing context, prediction losses only (SELECTED)",
+   "purpose": "the selected learned method",
+   "opts": {}
+  },
+  "M3": {
+   "policy": "full",
+   "tag": "full",
+   "seeded": true,
+   "label": "changing context + behavioural loss",
+   "purpose": "behavioural-supervision ablation; NOT the selected method",
+   "opts": {}
+  },
+  "M4": {
+   "policy": "full_no_check",
+   "tag": "full",
+   "seeded": true,
+   "label": "M3 with the repeated post-allocation check disabled",
+   "purpose": "isolates the repeated decrease check",
+   "opts": {
+    "enforce_post_alloc": "False"
+   }
+  },
+  "M5": {
+   "policy": "fallback_only",
+   "tag": "full",
+   "seeded": false,
+   "label": "nominal feedback + repair, no MPC optimisation",
+   "purpose": "simpler pipeline baseline; M2-M5 does NOT isolate planning",
+   "opts": {}
+  },
+  "Mmotion": {
+   "policy": "no_impact",
+   "tag": "motion",
+   "seeded": true,
+   "label": "M2 without the estimator-diagnostic channels",
+   "purpose": "incremental value of the explicit diagnostic channels",
+   "opts": {}
+  },
+  "Roff": {
+   "policy": "no_impact",
+   "tag": "no_impact",
+   "seeded": true,
+   "label": "M2 with finite proposal repair disabled",
+   "purpose": "clean repair contrast; both arms screen the TRANSMITTED command",
+   "opts": {
+    "repair": "False"
+   }
+  }
+ },
+ "wall_time_s": 46.75196886062622
+}

@@ -1,0 +1,61 @@
+==============================================================================
+PATH B  Sec 11.3: prospective test matrix  [CORRECTED OPERATING RADIUS]
+==============================================================================
+
+operating radius REPLACED: 51.4825 -> 168.2125
+  rule: R = max( 1.20 * max observed ||e||_P over the monitor pass, ||e||_P of a 2 m at-rest position error ). The first clause makes the radius an envelope of normal operation rather than a quantile that excludes its tail; the second guarantees the retained step task's initial condition is admissible, so the task cannot be forbidden at t = 0.
+  eta and every other constant are unchanged, so this isolates R.
+
+frozen operational constants (from the calibration block, never the test block):
+  lambda = 0.9888   eta = 4   R = 168.2125   diagnostic tolerance = 0.662 m
+  M4 included in the matrix: False  (M4 omitted; the repeated-check performance claim is removed and only the semantic/replay result is reported)
+
+test manifest sha256 01d416add89f07818ce837a29fbfa07b9d34b0b8703b02d436baf2aa58a0cf2d
+population sha256    b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634
+480 unique scenario-condition units (2 families x 4 conditions x 60 keys)
+
+method     seeded  ckpts  units  rollouts  definition
+M0          False      1    480       480  nominal, no learned residual or context
+M1           True      5    480      2400  trained constant context
+M2           True      5    480      2400  changing context, prediction losses only (SELECTED)
+M3           True      5    480      2400  changing context + behavioural loss
+M5          False      1    480       480  nominal feedback + repair, no MPC optimisation
+Mmotion      True      5    480      2400  M2 without the estimator-diagnostic channels
+Roff         True      5    480      2400  M2 with finite proposal repair disabled
+TOTAL                       480     12960
+     rollouts: 12960/12960 done in 6392s (16 workers)
+     rollouts: 12960/12960 done in 6392s (16 workers)
+
+wrote 4 representative traces to results/pathb_traces_Rcorrected.json
+
+method     rollouts  unique  ckpts  roll/unit  seedless methods must be 1.0
+M0              480     480      1        1.0
+M1             2400     480      5        5.0
+M2             2400     480      5        5.0
+M3             2400     480      5        5.0
+M5              480     480      1        1.0
+Mmotion        2400     480      5        5.0
+Roff           2400     480      5        5.0
+
+terminal progress categories (exactly one per rollout, Sec 9.5)
+method      never_entered_  position_but_n  both_tolerance    task_success  corrupted_unsc
+M0                      31              17              54             378               0
+M1                     196              96             292            1816               0
+M2                     193              59             263            1885               0
+M3                     244             135             316            1705               0
+M5                      40               5              32             403               0
+Mmotion                200              59             252            1889               0
+Roff                  1745             424             231               0               0
+
+orthogonal event flags (several may be true for one rollout)
+method      departed_afte  supervisor_in  no_passing_fa  solver_failur  repair_search  deadline_over  numerical_ano  episode_deadl
+M0                    339             24             24              0            480             11              0            102
+M1                   1626            145            145              0           2400              0              0            584
+M2                   1540             52             52            330           2400              0              0            515
+M3                   1592            142            142              1           2400              1              0            695
+M5                    288             10              0              0              0              2              0             77
+Mmotion              1534             63             63            403           2400              6              0            511
+Roff                  229           1120            764           1425              0              3              0           2400
+
+wrote results/pathb_rollouts_Rcorrected.csv (12960 rows, 102 columns)
+wrote results/pathb5_test_Rcorrected.json (107.1 min, 12960 rollouts)

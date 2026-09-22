@@ -1,0 +1,53 @@
+==============================================================================
+PATH B  Sec 6.4: smooth_dock_v1 development feasibility gate
+==============================================================================
+ladder (30.0, 40.0, 50.0) s, ascending; the SHORTEST passing duration is selected
+predeclared implementation margin 20% -> maximum normalised utilisation 0.80
+budget (frozen, yaw-independent inner bound) Fx,Fy <= 0.96 N, Mz <= 0.384 N m
+rollout requirement 18/20 completions under 22 consecutive observations span 21 intervals = 2.1 elapsed seconds at exactly 10 Hz, by logged timestamps.
+
+gate controller: M0, eta = 2 (archived development value), R = inf (no eligibility diversion)
+
+------------------------------------------------------------------------------
+duration 30 s
+  continuity at the join: max discontinuity 1.78e-09 over position, velocity, acceleration, yaw, rate, angular acceleration -> OK
+  analytic peaks: |a| = 0.02177 m/s^2 (0.544 N), |alpha| = 0.01344 rad/s^2 (0.0269 N m)
+  utilisation per axis [0.401, 0.401, 0.07]  max 0.401 vs cap 0.80 -> OK
+  heading peak 30.0 deg within +/-35 deg band -> OK;  preview length 13 = N+1 -> OK
+     M0 dev rollouts T=30s: 20/20 done in 10s (10 workers)
+     M0 dev rollouts T=30s: 20/20 done in 10s (10 workers)
+  rollouts: 10/20 completions (require 18), generator/state finite True, horizon 12 on every episode True
+            mean post-onset RMSE 0.1809 m, mean final position error 0.1972 m, max final |yaw| error 18.73 deg
+  duration FAILED the rollout gate; moving to the next rung. No Path B test outcome is inspected.
+
+------------------------------------------------------------------------------
+duration 40 s
+  continuity at the join: max discontinuity 7.50e-10 over position, velocity, acceleration, yaw, rate, angular acceleration -> OK
+  analytic peaks: |a| = 0.01225 m/s^2 (0.306 N), |alpha| = 0.00756 rad/s^2 (0.0151 N m)
+  utilisation per axis [0.226, 0.226, 0.039]  max 0.226 vs cap 0.80 -> OK
+  heading peak 30.0 deg within +/-35 deg band -> OK;  preview length 13 = N+1 -> OK
+     M0 dev rollouts T=40s: 20/20 done in 11s (10 workers)
+     M0 dev rollouts T=40s: 20/20 done in 11s (10 workers)
+  rollouts: 9/20 completions (require 18), generator/state finite True, horizon 12 on every episode True
+            mean post-onset RMSE 0.1781 m, mean final position error 0.1960 m, max final |yaw| error 19.33 deg
+  duration FAILED the rollout gate; moving to the next rung. No Path B test outcome is inspected.
+
+------------------------------------------------------------------------------
+duration 50 s
+  continuity at the join: max discontinuity 3.84e-10 over position, velocity, acceleration, yaw, rate, angular acceleration -> OK
+  analytic peaks: |a| = 0.00784 m/s^2 (0.196 N), |alpha| = 0.00484 rad/s^2 (0.0097 N m)
+  utilisation per axis [0.144, 0.144, 0.025]  max 0.144 vs cap 0.80 -> OK
+  heading peak 30.0 deg within +/-35 deg band -> OK;  preview length 13 = N+1 -> OK
+     M0 dev rollouts T=50s: 20/20 done in 11s (10 workers)
+     M0 dev rollouts T=50s: 20/20 done in 11s (10 workers)
+  rollouts: 7/20 completions (require 18), generator/state finite True, horizon 12 on every episode True
+            mean post-onset RMSE 0.1762 m, mean final position error 0.1938 m, max final |yaw| error 17.71 deg
+  duration FAILED the rollout gate; moving to the next rung. No Path B test outcome is inspected.
+
+==============================================================================
+GATE FAILED at every rung of the declared ladder.
+Sec 6.4 then forbids relaxing the margin or opening a test manifest:
+smooth_dock_v1 must be abandoned or redesigned and re-versioned on
+development data. No test outcome has been inspected.
+==============================================================================
+wrote results/pathb2_taskgate.json (66s)

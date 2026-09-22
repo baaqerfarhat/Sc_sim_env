@@ -1,0 +1,322 @@
+{
+ "stage": "pathb5_test",
+ "families": [
+  "step",
+  "smooth_dock"
+ ],
+ "conditions": [
+  "healthy",
+  "actuator",
+  "perception",
+  "combined"
+ ],
+ "n_per_cell": 60,
+ "seeds": [
+  0,
+  1,
+  2,
+  3,
+  4
+ ],
+ "include_M4": false,
+ "manifest": {
+  "block": "test",
+  "n_per_cell": 60,
+  "families": [
+   "step",
+   "smooth_dock"
+  ],
+  "conditions": [
+   "healthy",
+   "actuator",
+   "perception",
+   "combined"
+  ],
+  "n_units": 480,
+  "sha256": "01d416add89f07818ce837a29fbfa07b9d34b0b8703b02d436baf2aa58a0cf2d",
+  "population_sha256": "b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634"
+ },
+ "plan": {
+  "M0": {
+   "id": "M0",
+   "seeded": false,
+   "n_checkpoints": 1,
+   "n_rollouts": 480,
+   "n_unique_units": 480,
+   "label": "nominal, no learned residual or context"
+  },
+  "M1": {
+   "id": "M1",
+   "seeded": true,
+   "n_checkpoints": 5,
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "label": "trained constant context"
+  },
+  "M2": {
+   "id": "M2",
+   "seeded": true,
+   "n_checkpoints": 5,
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "label": "changing context, prediction losses only (SELECTED)"
+  },
+  "M3": {
+   "id": "M3",
+   "seeded": true,
+   "n_checkpoints": 5,
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "label": "changing context + behavioural loss"
+  },
+  "M5": {
+   "id": "M5",
+   "seeded": false,
+   "n_checkpoints": 1,
+   "n_rollouts": 480,
+   "n_unique_units": 480,
+   "label": "nominal feedback + repair, no MPC optimisation"
+  },
+  "Mmotion": {
+   "id": "Mmotion",
+   "seeded": true,
+   "n_checkpoints": 5,
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "label": "M2 without the estimator-diagnostic channels"
+  },
+  "Roff": {
+   "id": "Roff",
+   "seeded": true,
+   "n_checkpoints": 5,
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "label": "M2 with finite proposal repair disabled"
+  }
+ },
+ "counts": {
+  "M0": {
+   "n_rollouts": 480,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 1,
+   "seeded": false,
+   "rollouts_per_unit": 1.0
+  },
+  "M1": {
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 5,
+   "seeded": true,
+   "rollouts_per_unit": 5.0
+  },
+  "M2": {
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 5,
+   "seeded": true,
+   "rollouts_per_unit": 5.0
+  },
+  "M3": {
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 5,
+   "seeded": true,
+   "rollouts_per_unit": 5.0
+  },
+  "M5": {
+   "n_rollouts": 480,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 1,
+   "seeded": false,
+   "rollouts_per_unit": 1.0
+  },
+  "Mmotion": {
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 5,
+   "seeded": true,
+   "rollouts_per_unit": 5.0
+  },
+  "Roff": {
+   "n_rollouts": 2400,
+   "n_unique_units": 480,
+   "n_distinct_checkpoints": 5,
+   "seeded": true,
+   "rollouts_per_unit": 5.0
+  }
+ },
+ "ledger": {
+  "M0": {
+   "progress": {
+    "never_entered_position_tolerance": 200,
+    "position_but_never_simultaneous_yaw": 11,
+    "both_tolerances_but_no_dwell": 41,
+    "task_success": 228,
+    "corrupted_unscorable": 0
+   },
+   "n": 480,
+   "flags": {
+    "departed_after_entering": 191,
+    "supervisor_intervention": 304,
+    "no_passing_fallback": 0,
+    "solver_failure": 0,
+    "repair_search_failure": 417,
+    "deadline_overrun": 4,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 252
+   }
+  },
+  "M1": {
+   "progress": {
+    "never_entered_position_tolerance": 1025,
+    "position_but_never_simultaneous_yaw": 48,
+    "both_tolerances_but_no_dwell": 194,
+    "task_success": 1133,
+    "corrupted_unscorable": 0
+   },
+   "n": 2400,
+   "flags": {
+    "departed_after_entering": 917,
+    "supervisor_intervention": 1510,
+    "no_passing_fallback": 0,
+    "solver_failure": 0,
+    "repair_search_failure": 2100,
+    "deadline_overrun": 1,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 1267
+   }
+  },
+  "M2": {
+   "progress": {
+    "never_entered_position_tolerance": 1027,
+    "position_but_never_simultaneous_yaw": 62,
+    "both_tolerances_but_no_dwell": 178,
+    "task_success": 1133,
+    "corrupted_unscorable": 0
+   },
+   "n": 2400,
+   "flags": {
+    "departed_after_entering": 874,
+    "supervisor_intervention": 1481,
+    "no_passing_fallback": 0,
+    "solver_failure": 301,
+    "repair_search_failure": 2074,
+    "deadline_overrun": 2,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 1267
+   }
+  },
+  "M3": {
+   "progress": {
+    "never_entered_position_tolerance": 1074,
+    "position_but_never_simultaneous_yaw": 70,
+    "both_tolerances_but_no_dwell": 206,
+    "task_success": 1050,
+    "corrupted_unscorable": 0
+   },
+   "n": 2400,
+   "flags": {
+    "departed_after_entering": 901,
+    "supervisor_intervention": 1518,
+    "no_passing_fallback": 0,
+    "solver_failure": 0,
+    "repair_search_failure": 2096,
+    "deadline_overrun": 2,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 1350
+   }
+  },
+  "M5": {
+   "progress": {
+    "never_entered_position_tolerance": 193,
+    "position_but_never_simultaneous_yaw": 11,
+    "both_tolerances_but_no_dwell": 27,
+    "task_success": 249,
+    "corrupted_unscorable": 0
+   },
+   "n": 480,
+   "flags": {
+    "departed_after_entering": 176,
+    "supervisor_intervention": 300,
+    "no_passing_fallback": 0,
+    "solver_failure": 0,
+    "repair_search_failure": 0,
+    "deadline_overrun": 0,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 231
+   }
+  },
+  "Mmotion": {
+   "progress": {
+    "never_entered_position_tolerance": 1047,
+    "position_but_never_simultaneous_yaw": 60,
+    "both_tolerances_but_no_dwell": 177,
+    "task_success": 1116,
+    "corrupted_unscorable": 0
+   },
+   "n": 2400,
+   "flags": {
+    "departed_after_entering": 866,
+    "supervisor_intervention": 1482,
+    "no_passing_fallback": 0,
+    "solver_failure": 383,
+    "repair_search_failure": 2076,
+    "deadline_overrun": 1,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 1284
+   }
+  },
+  "Roff": {
+   "progress": {
+    "never_entered_position_tolerance": 1938,
+    "position_but_never_simultaneous_yaw": 284,
+    "both_tolerances_but_no_dwell": 177,
+    "task_success": 1,
+    "corrupted_unscorable": 0
+   },
+   "n": 2400,
+   "flags": {
+    "departed_after_entering": 173,
+    "supervisor_intervention": 2392,
+    "no_passing_fallback": 0,
+    "solver_failure": 740,
+    "repair_search_failure": 0,
+    "deadline_overrun": 1,
+    "numerical_anomaly": 0,
+    "episode_deadline_censored": 2399
+   }
+  }
+ },
+ "operational_constants": {
+  "lam": 0.9887629309299222,
+  "eta": 4.0,
+  "R": 51.48246984148404,
+  "diagnostic_tol": 0.662,
+  "frozen_on": "calibration key block, before any test episode"
+ },
+ "task_spec": {
+  "version": "task_success_v2",
+  "declared": {
+   "frame": "estimated state, the onboard assertion",
+   "tol_pos_m": 0.15,
+   "tol_yaw_deg": 5.0
+  },
+  "achieved": {
+   "frame": "true state, a ground-truth observer",
+   "tol_pos_m": 0.35,
+   "tol_yaw_deg": 15.0
+  },
+  "dwell_observations": 22,
+  "dwell_elapsed_s": 2.1,
+  "deadline_s": 60.0,
+  "convention": "22 consecutive observations span 21 intervals = 2.1 elapsed seconds at exactly 10 Hz, by logged timestamps.",
+  "changed_from_archive": "Two changes. (a) The archive used 21 observations and labelled the result 2.1 s; 21 observations span 2.0 s, so Sec 9.4's preferred freeze preserves the elapsed-time meaning and the count is 22. (b) The archived 0.15 m / 5 deg pair was applied to the TRUE state, where it is below the estimation floor and unreachable for every method; it is retained unchanged on the ESTIMATE and a separate true-state pair is derived from the floor. The endpoint is never reported under both dwell conventions, and the two frames are never merged into one number.",
+  "provenance": "DECLARED thresholds are the archived provisional engineering values, retained unchanged. ACHIEVED thresholds are fixed by the frozen VO constants through the analytic floor in results/pathb2_floor.json, not fitted to any rollout. Neither pair is a measured spacecraft requirement. Both were frozen from development evidence only, before the prospective test manifest was generated, and neither moves after any prospective outcome is seen.",
+  "scope": "A sampled task-completion endpoint. NOT an intersample guarantee."
+ },
+ "analysis_population": "all rollouts retained: supervisor intervals, solver failures, search failures, gate inactivity, deadline misses and non-completions are all in the denominators; no exclusions were applied",
+ "n_rollouts": 12960,
+ "manifest_hash": "07f277768a04859a",
+ "wall_time_s": 5255.029552936554,
+ "rows_note": "12960 per-rollout rows removed from this summary; they are the canonical long-form artefact and live in results/pathb_rollouts.csv"
+}

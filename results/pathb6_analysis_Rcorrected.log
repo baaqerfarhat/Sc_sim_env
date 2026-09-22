@@ -1,0 +1,99 @@
+==============================================================================
+PATH B  Sec 9-10: estimands, crossed bootstrap, claim gates  [CORRECTED RADIUS]
+==============================================================================
+
+12960 rollouts from manifest 01d416add89f0781
+analysis seed 260921, 10000 resamples, nominal 95% intervals and central 97.5% for the two co-primary gates
+
+==============================================================================
+CO-PRIMARY ESTIMANDS (Sec 1.2 / 9.2)
+==============================================================================
+
+  D21 = Delta(step) for M2-M1: changing context vs trained constant context
+    point estimate -0.1805 m
+    95%   [-0.2169, -0.1439] *
+    97.5% [-0.2215, -0.1381] *   <- the co-primary gate interval
+      healthy     -0.1345 m over 60 scenarios
+      actuator    -0.1179 m over 60 scenarios
+      perception  -0.2611 m over 60 scenarios
+      combined    -0.2087 m over 60 scenarios
+
+  D25 = Delta(smooth_dock) for M2-M5: complete learned-MPC pipeline vs nominal feedback/repair
+    point estimate -0.0126 m
+    95%   [-0.0294, +0.0035]  
+    97.5% [-0.0321, +0.0059]     <- the co-primary gate interval
+      healthy     -0.0140 m over 60 scenarios
+      actuator    -0.0221 m over 60 scenarios
+      perception  -0.0069 m over 60 scenarios
+      combined    -0.0074 m over 60 scenarios
+
+==============================================================================
+SECONDARY CONTRASTS (descriptive, Sec 9.3)
+==============================================================================
+  contrast     family            mean             95% interval  description
+  M3-M2        step           +0.2413 [  +0.1983,   +0.2856] * behavioural loss
+  M3-M2        smooth_dock    +0.0271 [  +0.0132,   +0.0417] * behavioural loss
+  M2-Mmotion   step           -0.0094 [  -0.0404,   +0.0236]   estimator-diagnostic channels
+  M2-Mmotion   smooth_dock    -0.0037 [  -0.0136,   +0.0063]   estimator-diagnostic channels
+  M2-Roff      step           -2.3216 [  -2.5696,   -2.0720] * finite proposal repair
+  M2-Roff      smooth_dock    -1.6857 [  -1.9078,   -1.4912] * finite proposal repair
+  M2-M0        step           -0.1304 [  -0.1656,   -0.0945] * learned residual
+  M2-M0        smooth_dock    -0.0115 [  -0.0305,   +0.0074]   learned residual
+  M2-M5        step           +0.1453 [  +0.1130,   +0.1788] * learned-MPC pipeline
+  M2-M5        smooth_dock    -0.0126 [  -0.0293,   +0.0037]   learned-MPC pipeline
+  M2-M1        step           -0.1805 [  -0.2166,   -0.1440] * changing context
+  M2-M1        smooth_dock    -0.0206 [  -0.0405,   -0.0028] * changing context
+
+==============================================================================
+TASK COMPLETION DIFFERENCES (descriptive; both frames, never merged)
+==============================================================================
+  M2-M1      step         achieved, true state       +0.0617  95% [+0.0217, +0.1017] *
+  M2-M5      smooth_dock  achieved, true state       -0.0067  95% [-0.0392, +0.0250]
+  M2-M1      step         declared, estimated state  +0.0550  95% [+0.0267, +0.0858] *
+  M2-M5      smooth_dock  declared, estimated state  -0.0058  95% [-0.0467, +0.0325]
+
+==============================================================================
+THE ESTIMATION GAP (declared but not achieved), by condition
+==============================================================================
+  method    family            healthy    actuator  perception    combined
+  M0        step                0.000       0.017       0.017       0.033
+  M0        smooth_dock         0.000       0.000       0.033       0.017
+  M1        step                0.000       0.003       0.013       0.023
+  M1        smooth_dock         0.000       0.000       0.040       0.017
+  M2        step                0.003       0.000       0.050       0.043
+  M2        smooth_dock         0.000       0.000       0.057       0.067
+  M3        step                0.003       0.003       0.013       0.020
+  M3        smooth_dock         0.000       0.000       0.057       0.037
+  M5        step                0.000       0.000       0.033       0.100
+  M5        smooth_dock         0.000       0.000       0.067       0.050
+  Mmotion   step                0.000       0.003       0.027       0.023
+  Mmotion   smooth_dock         0.000       0.000       0.060       0.053
+  Roff      step                0.000       0.000       0.000       0.000
+  Roff      smooth_dock         0.000       0.000       0.000       0.000
+
+==============================================================================
+CLAIM GATES (Sec 10: these decide WORDING, not desirability)
+==============================================================================
+
+  10.1  dynamic_context_rmse         -> SUPPORTED
+        Changing context attains lower condition-balanced post-onset position RMSE than the trained static-context baseline on the retained step task.
+
+  10.2  learned_mpc_pipeline_rmse    -> UNRESOLVED
+        M5 is indistinguishable from the learned-MPC pipeline on this endpoint. Say so plainly.
+
+  10.3  multimodal_streams           -> UNRESOLVED
+        The incremental value of the explicit estimator-diagnostic channels is not established. The title is retained, the input composition is described prec
+
+  10.4  behavioural_loss             -> ADVERSE
+        Behavioural supervision is reported as an ablation that did not help. The development grid selected weight zero, so M2 is the selected method and M3 i
+
+  10.5  repeated_check               -> REDUNDANT_UNDER_PRECEDING_SCREEN
+        The repeated post-allocation check is REDUNDANT under the screen that precedes it: over the development stop-gate episodes it never fired and disablin
+
+  10.5  finite_repair                -> SUPPORTED
+        Finite proposal repair improves tracking, measured against a clean R-off variant in which both arms trial-allocate their own proposal and both apply t
+
+  10.6  certificate_and_safety       -> NOT_CLAIMED
+        No verified invariant region, calibrated safety probability, collision-free, continuous-time safety or guaranteed recovery claim is made. The transmit
+
+wrote results/pathb6_analysis_Rcorrected.json (554s)

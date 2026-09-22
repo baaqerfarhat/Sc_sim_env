@@ -1,0 +1,399 @@
+{
+  "source": {
+    "artifact": "results__stage6_methods.json",
+    "sha256": "2f28c0bb67eeff10b9ffa2c0bf96e63e8b9155cf67757f8455e9b76c217663d5",
+    "training_artifact": "results__stage5_training.json",
+    "training_sha256": "867d4f6c0160dadd3e9c5565ecdeede8083b5e37e9b8c42f0ca8e43500df2e53",
+    "public_snapshot_commit": "9e2af1607dfe5f90a76bf796b293436d71fab7ad",
+    "archived_run_commit": "81f52657c7d16d8377ac0812d13295410de377a7",
+    "archived_run_dirty": true,
+    "manifest_hash": "07f277768a04859a"
+  },
+  "design": {
+    "conditions": [
+      "healthy",
+      "actuator",
+      "perception",
+      "combined"
+    ],
+    "scenarios_per_condition": 60,
+    "trained_seed_ids": {
+      "M1_constant_context": [
+        0,
+        1,
+        2
+      ],
+      "M2_no_impact": [
+        0,
+        1,
+        2
+      ],
+      "M3_full": [
+        0,
+        1,
+        2
+      ]
+    },
+    "trained_seed_counts": {
+      "M1_constant_context": 3,
+      "M2_no_impact": 3,
+      "M3_full": 3
+    },
+    "evaluated_seed_ids": {
+      "M1_constant_context": [
+        0
+      ],
+      "M2_no_impact": [
+        0,
+        1,
+        2
+      ],
+      "M3_full": [
+        0,
+        1,
+        2
+      ]
+    },
+    "evaluated_seed_counts": {
+      "M1_constant_context": 1,
+      "M2_no_impact": 3,
+      "M3_full": 3
+    },
+    "primary_endpoint": {
+      "metric": "post_onset_rmse",
+      "comparison": "full - no_impact (M3 - M2)",
+      "declared": "before the final test run",
+      "task_tolerance_m": 0.15,
+      "interpretation": "effect size is judged against the task tolerance as well as against its confidence interval"
+    },
+    "recovery_tolerance_m": 0.662,
+    "task_spec": {
+      "tol_pos_m": 0.15,
+      "tol_yaw_rad": 0.08726646259971647,
+      "tol_yaw_deg": 5.0,
+      "dwell_s": 2.1,
+      "deadline_s": 60.0,
+      "provenance": "provisional development values declared before the final test; NOT measured spacecraft requirements"
+    },
+    "task_scoring_note": "Archived metadata labels dwell_s=2.1. The pinned Stage-6 source uses TASK_DWELL_STEPS=21 consecutive 10 Hz observations, spanning 2.0 elapsed seconds. The original metadata is preserved above, not silently corrected.",
+    "calibration": {
+      "R": 63.1133,
+      "eta": 2.0,
+      "source_policy": "M3/full, seed 0, separate calibration split"
+    }
+  },
+  "post_onset_rmse_effects": {
+    "M2-M0": {
+      "healthy": {
+        "mean_m": -0.0615,
+        "ci95_m": [
+          -0.0722,
+          -0.0515
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "actuator": {
+        "mean_m": -0.0979,
+        "ci95_m": [
+          -0.118,
+          -0.0783
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "perception": {
+        "mean_m": -0.3301,
+        "ci95_m": [
+          -0.4928,
+          -0.1753
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "combined": {
+        "mean_m": -0.3758,
+        "ci95_m": [
+          -0.5497,
+          -0.2287
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      }
+    },
+    "M2-M1": {
+      "healthy": {
+        "mean_m": -0.0933,
+        "ci95_m": [
+          -0.1091,
+          -0.0779
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "actuator": {
+        "mean_m": -0.1384,
+        "ci95_m": [
+          -0.1656,
+          -0.1124
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "perception": {
+        "mean_m": -0.5152,
+        "ci95_m": [
+          -0.7457,
+          -0.319
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "combined": {
+        "mean_m": -0.3841,
+        "ci95_m": [
+          -0.5328,
+          -0.2475
+        ],
+        "interval_level": "episode",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      }
+    },
+    "M2-M5": {
+      "healthy": {
+        "mean_m": 0.0715,
+        "ci95_m": [
+          0.0557,
+          0.0864
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "actuator": {
+        "mean_m": 0.1688,
+        "ci95_m": [
+          0.1375,
+          0.1984
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "perception": {
+        "mean_m": 0.2395,
+        "ci95_m": [
+          0.1033,
+          0.3943
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "combined": {
+        "mean_m": 0.1641,
+        "ci95_m": [
+          0.0777,
+          0.2679
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      }
+    },
+    "M3-M2": {
+      "healthy": {
+        "mean_m": 0.1652,
+        "ci95_m": [
+          0.1068,
+          0.2757
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "actuator": {
+        "mean_m": 0.2787,
+        "ci95_m": [
+          0.1965,
+          0.3804
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "perception": {
+        "mean_m": 0.4357,
+        "ci95_m": [
+          0.2129,
+          0.6543
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      },
+      "combined": {
+        "mean_m": 0.5104,
+        "ci95_m": [
+          0.3481,
+          0.6954
+        ],
+        "interval_level": "crossed",
+        "unique_scenarios": 60,
+        "rollouts": 180
+      }
+    }
+  },
+  "task_completion": {
+    "healthy": {
+      "M2": {
+        "success": 100,
+        "n": 180,
+        "held_at_end": 11
+      },
+      "M5_deduplicated": {
+        "success": 35,
+        "n": 60,
+        "held_at_end": 4
+      }
+    },
+    "actuator": {
+      "M2": {
+        "success": 106,
+        "n": 180,
+        "held_at_end": 9
+      },
+      "M5_deduplicated": {
+        "success": 33,
+        "n": 60,
+        "held_at_end": 4
+      }
+    },
+    "perception": {
+      "M2": {
+        "success": 1,
+        "n": 180,
+        "held_at_end": 0
+      },
+      "M5_deduplicated": {
+        "success": 2,
+        "n": 60,
+        "held_at_end": 0
+      }
+    },
+    "combined": {
+      "M2": {
+        "success": 4,
+        "n": 180,
+        "held_at_end": 0
+      },
+      "M5_deduplicated": {
+        "success": 3,
+        "n": 60,
+        "held_at_end": 0
+      }
+    }
+  },
+  "diagnostic_recovery": {
+    "actuator": {
+      "M2": {
+        "success": 180,
+        "n": 180
+      },
+      "M5_deduplicated": {
+        "success": 60,
+        "n": 60
+      }
+    },
+    "perception": {
+      "M2": {
+        "success": 162,
+        "n": 180
+      },
+      "M5_deduplicated": {
+        "success": 56,
+        "n": 60
+      }
+    },
+    "combined": {
+      "M2": {
+        "success": 173,
+        "n": 180
+      },
+      "M5_deduplicated": {
+        "success": 51,
+        "n": 60
+      }
+    }
+  },
+  "action_sources": {
+    "no_impact": {
+      "healthy": {
+        "candidate": 0.9978,
+        "supervisor": 0.0022
+      },
+      "actuator": {
+        "candidate": 0.9977,
+        "supervisor": 0.0023
+      },
+      "perception": {
+        "candidate": 0.9266,
+        "supervisor": 0.0723
+      },
+      "combined": {
+        "candidate": 0.9366,
+        "supervisor": 0.0625
+      }
+    },
+    "full": {
+      "healthy": {
+        "candidate": 0.9867,
+        "supervisor": 0.0133
+      },
+      "actuator": {
+        "candidate": 0.9864,
+        "supervisor": 0.0136
+      },
+      "perception": {
+        "candidate": 0.8101,
+        "supervisor": 0.1899
+      },
+      "combined": {
+        "candidate": 0.8082,
+        "supervisor": 0.1918
+      }
+    },
+    "fallback_only_deduplicated": {
+      "healthy": {
+        "fallback_only": 0.9978,
+        "supervisor": 0.0022
+      },
+      "actuator": {
+        "fallback_only": 0.9977,
+        "supervisor": 0.0023
+      },
+      "perception": {
+        "fallback_only": 0.9723,
+        "supervisor": 0.0278
+      },
+      "combined": {
+        "fallback_only": 0.9728,
+        "supervisor": 0.0272
+      }
+    }
+  },
+  "assertions": {
+    "M5_outcomes_identical_across_repeated_seed_indices": true,
+    "M3_M4_outcomes_identical": true,
+    "degraded_held_at_end_zero_for_M2_M5": true,
+    "paired_effect_means_match_episode_rows": true
+  }
+}

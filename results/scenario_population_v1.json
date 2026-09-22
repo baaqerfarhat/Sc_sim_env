@@ -1,0 +1,144 @@
+{
+ "actuator_fault_law": {
+  "counter_rule": "should_fire = (nxt * fault_fraction - fired) >= 0.5, evaluated per cycle; on a fire, `fired` increments; `nxt` increments every cycle",
+  "fault_fraction": 0.7,
+  "labels": "T7/T8 in one-based manuscript numbering",
+  "semantics": "RETAINED firing-cycle fraction: ~70% of otherwise eligible cycles fire and ~30% are skipped. NOT a continuous 70% thrust-amplitude scale and NOT 70% skipped.",
+  "thrusters": [
+   6,
+   7
+  ],
+  "visibility": "hidden; realised only inside the plant and never an encoder input"
+ },
+ "allocator": {
+  "duty_ceiling_frac": 0.4,
+  "duty_ceiling_s": 0.04,
+  "duty_law_s": "t_on = 4.829 * F / 25 - 0.07686",
+  "min_pulse_s": 0.012,
+  "min_pulse_threshold_N": 0.001,
+  "open_valve_force_N": 1.2,
+  "operation_order": [
+   "threshold: requests at or below 0.001 N are dropped to zero",
+   "duty law evaluated on the remaining request",
+   "minimum-pulse promotion to 0.012 s",
+   "clip to the 0.040 s duty ceiling"
+  ],
+  "slot_s": 0.1,
+  "thrust_gain": 2.0
+ },
+ "condition_overrides": {
+  "actuator": {
+   "fault_active": true,
+   "fault_fraction": 0.7,
+   "intervention": "pulse_skip",
+   "perception": "healthy"
+  },
+  "combined": {
+   "fault_active": true,
+   "fault_fraction": 0.7,
+   "intervention": "pulse_skip+measurement",
+   "perception": "occluded"
+  },
+  "healthy": {
+   "fault_active": false,
+   "intervention": "none",
+   "perception": "healthy"
+  },
+  "perception": {
+   "fault_active": false,
+   "intervention": "measurement",
+   "perception": "occluded"
+  }
+ },
+ "conditions": [
+  "healthy",
+  "actuator",
+  "perception",
+  "combined"
+ ],
+ "config_manifest_hash": "07f277768a04859a",
+ "control_period_s": 0.1,
+ "draw_order": [
+  "onset_s",
+  "mass_factor",
+  "jzz_factor",
+  "drag",
+  "yaw_damp"
+ ],
+ "episode_seconds": 60.0,
+ "episode_steps": 600,
+ "initial_state": {
+  "law": "deterministic",
+  "note": "x0 = 0 exactly; the initial state is NOT randomised in the primary study, so it contributes no variance and must not be described as a draw.",
+  "value": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "perception_degradation": {
+  "mode": "occluded",
+  "note": "VO surrogate degradation: dropout and inflated measurement noise. Realised inside the estimator surrogate; its parameters are frozen in scsim/estimator.py and hashed in the config manifest."
+ },
+ "seed_to_draw": {
+  "independent_across_conditions": true,
+  "rule": "numpy default_rng seeded by zlib.crc32(repr((condition, ep_seed, *extra)).encode()) & 0xFFFFFFFF",
+  "why": "Python's builtin hash() is salted per interpreter, so seeding from it makes the draw depend on PYTHONHASHSEED: matched within a run but different on a rerun."
+ },
+ "stress_span_excluded": {
+  "value": 0.15,
+  "why": "The +/-15% mass/inertia setting is an out-of-distribution stress cell and is NOT part of the primary four-condition estimand."
+ },
+ "variables": {
+  "drag": {
+   "law": "uniform",
+   "support": [
+    0.0,
+    0.02
+   ],
+   "unit": "N per (m/s), linear translational drag"
+  },
+  "jzz_factor": {
+   "law": "uniform",
+   "nominal_jzz_kgm2": 2.0,
+   "support": [
+    0.9,
+    1.1
+   ],
+   "unit": "dimensionless multiplier on JZZ"
+  },
+  "mass_factor": {
+   "independent_of": "jzz_factor (separate draws, no correlation)",
+   "law": "uniform",
+   "nominal_mass_kg": 25.0,
+   "support": [
+    0.9,
+    1.1
+   ],
+   "unit": "dimensionless multiplier on MASS"
+  },
+  "onset_s": {
+   "applies_to": "all four conditions, INCLUDING healthy, where it is a pseudo-onset that defines the scoring window only and triggers no impairment",
+   "endpoints": "closed low, open high (numpy uniform)",
+   "grid": "onset_step = int(round(onset_s / TS))",
+   "law": "uniform",
+   "support": [
+    15.0,
+    20.0
+   ],
+   "unit": "s"
+  },
+  "yaw_damp": {
+   "law": "uniform",
+   "support": [
+    0.0,
+    0.02
+   ],
+   "unit": "N m per (rad/s), linear yaw damping"
+  }
+ },
+ "version": "scenario_population_v1"
+}

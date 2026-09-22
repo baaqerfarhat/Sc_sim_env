@@ -1,0 +1,124 @@
+{
+ "stage": "pathb2_floor",
+ "horizon_s": 60.0,
+ "quantile": 0.9,
+ "analytic": {
+  "healthy": {
+   "mode": "healthy",
+   "t_s": 60.0,
+   "quantile": 0.9,
+   "bias_rw": 0.02,
+   "yaw_bias_rw": 0.016,
+   "sigma_pos_per_axis_m": 0.15491933384829668,
+   "sigma_yaw_rad": 0.12393546707863735,
+   "pos_floor_m": 0.332451627253822,
+   "yaw_floor_rad": 0.20385570253222135,
+   "pos_mean_m": 0.1941625912555699,
+   "yaw_mean_rad": 0.09888619571793655,
+   "scale_err_excluded": 0.0,
+   "pos_noise_excluded": 0.045
+  },
+  "occluded": {
+   "mode": "occluded",
+   "t_s": 60.0,
+   "quantile": 0.9,
+   "bias_rw": 0.085,
+   "yaw_bias_rw": 0.03,
+   "sigma_pos_per_axis_m": 0.658407168855261,
+   "sigma_yaw_rad": 0.232379000772445,
+   "pos_floor_m": 1.4129194158287437,
+   "yaw_floor_rad": 0.38222944224791494,
+   "pos_mean_m": 0.8251910128361722,
+   "yaw_mean_rad": 0.185411616971131,
+   "scale_err_excluded": 0.1,
+   "pos_noise_excluded": 0.1
+  }
+ },
+ "openloop": {
+  "healthy": {
+   "mode": "healthy",
+   "n_episodes": 400,
+   "quantile": 0.9,
+   "pos_floor_m": 0.35037582816314955,
+   "yaw_floor_rad": 0.23288805192732112,
+   "pos_mean_m": 0.20499441819249128,
+   "yaw_mean_rad": 0.11483489852974564,
+   "pos_by_time": {
+    "0": 0.0,
+    "10": 0.16217923199234854,
+    "20": 0.2080033011941751,
+    "30": 0.24726172090851145,
+    "40": 0.29738115910838814,
+    "50": 0.31419931074125645
+   },
+   "yaw_by_time_deg": {
+    "0": 0.0,
+    "10": 6.5724416338265375,
+    "20": 7.755923277494717,
+    "30": 8.919394666850032,
+    "40": 10.385451652494805,
+    "50": 11.414060387668906
+   }
+  },
+  "occluded": {
+   "mode": "occluded",
+   "n_episodes": 400,
+   "quantile": 0.9,
+   "pos_floor_m": 1.4268077942015551,
+   "yaw_floor_rad": 0.3950803957201623,
+   "pos_mean_m": 0.831083671219682,
+   "yaw_mean_rad": 0.19704471628768513,
+   "pos_by_time": {
+    "0": 0.0,
+    "10": 0.5321210035724582,
+    "20": 0.761128903097392,
+    "30": 0.9619184455512376,
+    "40": 1.1329360846727348,
+    "50": 1.2721679546530549
+   },
+   "yaw_by_time_deg": {
+    "0": 0.0,
+    "10": 11.52493868151335,
+    "20": 15.108340010181752,
+    "30": 18.032245133739156,
+    "40": 19.327139766024178,
+    "50": 21.223606553051802
+   }
+  }
+ },
+ "task_success_v2": {
+  "version": "task_success_v2",
+  "supersedes": "the archived provisional 0.15 m / 5 deg / 2.1 s development values",
+  "dwell_observations": 22,
+  "dwell_elapsed_s": 2.1,
+  "dwell_convention": "22 consecutive observations span 21 intervals = 2.1 elapsed seconds at exactly 10 Hz, by logged timestamps",
+  "declared": {
+   "frame": "estimated state, the onboard assertion",
+   "tol_pos_m": 0.15,
+   "tol_yaw_deg": 5.0,
+   "rationale": "the archived provisional values, retained unchanged; they are achievable in the frame the controller can actually see"
+  },
+  "achieved": {
+   "frame": "true state, a ground-truth observer",
+   "tol_pos_m": 0.35,
+   "tol_yaw_deg": 15.0,
+   "rationale": "the healthy estimation floor at the 90% quantile and the 60 s completion deadline, rounded up; a true-state tolerance below this is unreachable for EVERY method because no controller can place the true state closer to the goal than its estimate is to the truth"
+  },
+  "derivation": {
+   "mode": "healthy",
+   "t_s": 60.0,
+   "quantile": 0.9,
+   "bias_rw": 0.02,
+   "yaw_bias_rw": 0.016,
+   "sigma_pos_per_axis_m": 0.15491933384829668,
+   "sigma_yaw_rad": 0.12393546707863735,
+   "pos_floor_m": 0.332451627253822,
+   "yaw_floor_rad": 0.20385570253222135,
+   "pos_mean_m": 0.1941625912555699,
+   "yaw_mean_rad": 0.09888619571793655,
+   "scale_err_excluded": 0.0,
+   "pos_noise_excluded": 0.045
+  },
+  "not_a_mission_requirement": "Neither pair is a measured mission requirement. `declared` is inherited engineering judgement; `achieved` is fixed by the frozen estimator constants. Both are frozen here, before the test manifest is generated, and neither may move after any prospective outcome is seen."
+ }
+}

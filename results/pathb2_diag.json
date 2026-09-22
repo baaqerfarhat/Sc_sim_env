@@ -1,0 +1,64 @@
+{
+ "stage": "pathb2_diag",
+ "dead_zone_pos_m": 0.010071582414495028,
+ "dead_zone_yaw_rad": 0.023723604836283035,
+ "deadband_force_N": 0.1,
+ "deadband_yaw_Nm": 0.02,
+ "tiny_axis_frac": 0.05,
+ "families": {
+  "step": {
+   "completions": 10,
+   "pos_med": 0.2633110720545759,
+   "yaw_med": 8.43851504169589,
+   "pos_p90": 0.36988492564451303,
+   "yaw_p90": 16.833498549718655,
+   "progress": {
+    "task_success": 10
+   }
+  },
+  "smooth": {
+   "completions": 10,
+   "pos_med": 0.2522107947228971,
+   "yaw_med": 9.173602505846354,
+   "pos_p90": 0.3845122735438662,
+   "yaw_p90": 16.604849511713716,
+   "progress": {
+    "task_success": 10
+   }
+  },
+  "transfer": {
+   "completions": 0,
+   "pos_med": NaN,
+   "yaw_med": NaN,
+   "pos_p90": NaN,
+   "yaw_p90": NaN,
+   "progress": {
+    "corrupted_unscorable": 10
+   }
+  },
+  "smooth_dock T=30": {
+   "completions": 10,
+   "pos_med": 0.2532888800024376,
+   "yaw_med": 9.08874150227395,
+   "pos_p90": 0.3634243451800947,
+   "yaw_p90": 18.038810004726948,
+   "progress": {
+    "task_success": 10
+   }
+  },
+  "smooth_dock T=50": {
+   "completions": 9,
+   "pos_med": 0.2521391289033572,
+   "yaw_med": 8.90526732537846,
+   "pos_p90": 0.37254438207266966,
+   "yaw_p90": 16.49285368508992,
+   "progress": {
+    "task_success": 9,
+    "both_tolerances_but_no_dwell": 1
+   }
+  }
+ },
+ "deadband_hypothesis": "REFUTED; see verdict. The cause is the estimator's unbounded drift, quantified in results/pathb2_floor.json",
+ "tol_pos_m": 0.15,
+ "tol_yaw_rad": 0.08726646259971647
+}

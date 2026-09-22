@@ -1,0 +1,99 @@
+==============================================================================
+PATH B  calibration and the Priority-2 development gates
+==============================================================================
+frozen supervision design: lambda=0.9888 |K|max=27.38
+
+==============================================================================
+A  calibration on the `calibration` key block (MONITOR mode, then frozen)
+==============================================================================
+     monitor pass: 200/200 done in 116s (14 workers)
+     monitor pass: 200/200 done in 116s (14 workers)
+  200 monitor episodes over 2 families x 4 conditions x 25 keys
+  eligibility radius R = p95 of ||e||_P over 120000 transitions = 51.4825
+  the decrease inequality is violated by the candidate in 59.6% of monitored steps
+  conformal eta at delta=0.025 would be 1.8753
+     eta=0: 64/64 done in 23s (14 workers)
+     eta=0.5: 64/64 done in 31s (14 workers)
+     eta=1: 64/64 done in 31s (14 workers)
+     eta=1.8753: 64/64 done in 33s (14 workers)
+     eta=2: 64/64 done in 33s (14 workers)
+     eta=4: 64/64 done in 33s (14 workers)
+     eta=8: 64/64 done in 33s (14 workers)
+     eta=16: 64/64 done in 33s (14 workers)
+     eta=64: 64/64 done in 33s (14 workers)
+     eta=inf: 64/64 done in 33s (14 workers)
+  eta selection (declared rule: minimise calibration post-onset RMSE):
+    eta=      0  RMSE 1.9115  MPC share 0.132  supervisor 0.868
+    eta=    0.5  RMSE 1.2250  MPC share 0.483  supervisor 0.516
+    eta=      1  RMSE 1.1968  MPC share 0.543  supervisor 0.456
+    eta=  1.875  RMSE 1.1396  MPC share 0.593  supervisor 0.406
+    eta=      2  RMSE 1.1337  MPC share 0.598  supervisor 0.402
+    eta=      4  RMSE 1.1246  MPC share 0.600  supervisor 0.400  <- selected
+    eta=      8  RMSE 1.1246  MPC share 0.600  supervisor 0.400
+    eta=     16  RMSE 1.1246  MPC share 0.600  supervisor 0.400
+    eta=     64  RMSE 1.1246  MPC share 0.600  supervisor 0.400
+    eta=    inf  RMSE 1.1246  MPC share 0.600  supervisor 0.400  (no-check limit, reference only)
+  the minimum is INTERIOR to the finite ladder
+  removing the screen entirely changes calibration RMSE by +0.0000 m relative to the selected eta
+
+FROZEN before any gate or test episode: R = 51.4825, eta = 4, diagnostic tolerance = 0.662 m
+
+==============================================================================
+B  instrumentation smoke gate (Sec 7 Priority 2): 48 development episodes
+==============================================================================
+     smoke: 48/48 done in 19s (14 workers)
+     smoke: 48/48 done in 19s (14 workers)
+  48 episodes = 3 controllers x 2 families x 4 conditions x 2 scenarios
+  [PASS] 7.2a every declared log channel is present on every episode
+         25 required channels present; missing none
+  [PASS] 7.2b the MPC preview is N+1 = 13 at the frozen horizon N = 12, and H is recorded separately
+         every episode records mpc_horizon_N = 12 (preview 13 indices) and train_rollout_depth_H = 5
+  [PASS] 7.2c the action taxonomy is total: exactly one source per step, shares sum to one
+         48 episodes, all shares sum to 1.0 within 1e-9.
+         labels observed: ['fallback_solver', 'm5_feedback', 'mpc_primary', 'mpc_replacement', 'supervisor_operating_radius']
+         all within the declared 12-label taxonomy: True
+  [PASS] 7.2d fault-slot execution: no skips when healthy, at most one per step when faulted
+         healthy: [0] skips; faulted: 125-135 skips over 600 steps
+  [PASS] 7.2e complete decision latency is measured and inside the period
+         worst per-episode p95 decision latency 19.2 ms against the 100 ms period;
+         worst per-episode deadline-miss rate 0.0000. SIMULATION-WORKSTATION timing, not the flight computer.
+     M0 seed independence: 5/5 done in 5s (5 workers)
+     M0 seed independence: 5/5 done in 5s (5 workers)
+  [PASS] 4.1 M0 is checkpoint-INDEPENDENT, verified empirically
+         5 different checkpoints loaded (1 distinct file hashes) produce bitwise
+         identical commanded packets and a single post-onset RMSE value [0.90410207284].
+         It may therefore be run once per scenario. Sec 4.1 forbids copying one trajectory
+         five times and reporting the copies as seed replicates, and Sec 11.4 forbids
+         counting them as rollouts.
+     M5 seed independence: 5/5 done in 4s (5 workers)
+     M5 seed independence: 5/5 done in 4s (5 workers)
+  [PASS] 4.1 M5 is checkpoint-INDEPENDENT, verified empirically
+         5 different checkpoints loaded (1 distinct file hashes) produce bitwise
+         identical commanded packets and a single post-onset RMSE value [0.581596649763].
+         It may therefore be run once per scenario. Sec 4.1 forbids copying one trajectory
+         five times and reporting the copies as seed replicates, and Sec 11.4 forbids
+         counting them as rollouts.
+
+==============================================================================
+C  M3/M4 semantic stop gate (Sec 7 Priority 2): 160 development episodes
+==============================================================================
+     M3/M4 pairs: 80/80 done in 76s (14 workers)
+     M3/M4 pairs: 80/80 done in 76s (14 workers)
+  16 scenario units x 5 M3 checkpoints x 2 deployments = 160 episodes
+  selected packets identical on every pair: True
+  action sources identical on every pair:   True
+  trajectories identical on every pair:     True  (max |state difference| 0.000e+00)
+  M3 enabled repeated-check rejections:     0
+  M3 would-reject count (test evaluated, not acted on): 0
+
+  ==> STOP RULE TRIGGERED. M4 is OMITTED from the prospective matrix and
+      the repeated-check PERFORMANCE claim is removed. Only the
+      semantic/replay finding is reported: over 160 development
+      episodes the repeated post-allocation check never fired and
+      disabling it changed nothing, bitwise.
+
+==============================================================================
+SMOKE GATE: PASS   M4 in the prospective matrix: False
+development episodes spent: 1058
+==============================================================================
+wrote results/pathb4_gates.json (9.5 min)

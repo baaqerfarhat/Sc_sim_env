@@ -89,17 +89,28 @@ class ContextModel(nn.Module):
     than a retrained model.
     """
 
-    def __init__(self, constant_context=False, **kw):
+    def __init__(self, constant_context=False, feat_mask=None, **kw):
         super().__init__()
         self.enc = ContextEncoder(**kw.get("enc", {}))
         self.res = DynamicsResidual(**kw.get("res", {}))
         self.constant_context = bool(constant_context)
         self.const_z = nn.Parameter(torch.zeros(C.D_LATENT))
+        # Sec 4/5.3 modality ablation. Registered as a BUFFER, so it travels inside the
+        # checkpoint: a model trained without the diagnostic channels must not be
+        # deployed with them, and an ablation whose mask lived only in the training
+        # script would silently become the full model at evaluation time.
+        from .scenarios import feature_mask as _fm
+        m = _fm("full") if feat_mask is None else np.asarray(feat_mask,
+                                                             dtype=np.float32)
+        self.register_buffer("feat_mask", torch.tensor(m, dtype=torch.float32))
+        self.feat_mask_name = "full" if feat_mask is None else "custom"
 
     def encode(self, feats, mask):
         if self.constant_context:
             return self.const_z.unsqueeze(0).expand(feats.shape[0], -1)
-        return self.enc(feats, mask)
+        # Masking is applied here, at the single entry point every caller uses, rather
+        # than at each call site, so training and deployment cannot disagree.
+        return self.enc(feats * self.feat_mask, mask)
 
     def residual(self, xb, ub, z):
         return self.res(xb, ub, z)

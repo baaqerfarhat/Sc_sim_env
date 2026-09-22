@@ -424,16 +424,23 @@ def _sig_window(ds, key):
 
 
 def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
-              epochs=8, batch=256, lr=1e-3):
+              epochs=8, batch=256, lr=1e-3, feat_mask="full"):
     """Train one representation.
 
     The optimiser budget, batch size, epoch count, learning rate, initial weights
     (same seed) and checkpoint rule are IDENTICAL across variants. lambda_I is the
     only intentional difference between `full` and `no_impact`.
+
+    `feat_mask` names an encoder-input mask (Path B Sec 4/5.3). It is stored in the
+    checkpoint so the mask a model was trained under is the mask it is deployed under;
+    a modality ablation whose mask lived only here would silently become the full model
+    at evaluation time.
     """
+    from scsim.scenarios import feature_mask
     set_seed(seed)
     torch.set_num_threads(6)
-    model = ContextModel(constant_context=constant_context)
+    model = ContextModel(constant_context=constant_context,
+                         feat_mask=feature_mask(feat_mask))
     opt = torch.optim.AdamW(model.trainable(), lr=lr, weight_decay=1e-4)
 
     tr, dv = ds["train"], ds["dev"]
@@ -568,11 +575,15 @@ def train_one(ds, q_mu, q_sd, seed, lambda_i, tag, constant_context=False,
     path = os.path.join(DATA, f"model_{tag}.pt")
     torch.save({"model": model.state_dict(), "lambda_i": lambda_i, "seed": seed,
                 "constant_context": constant_context, "best_epoch": best[2],
-                "dev_l1": best[0]}, path)
+                "dev_l1": best[0], "feat_mask": feat_mask}, path)
     print(f"    selected epoch {best[2]} (dev_L1 {best[0]:.6f}) -> {path}")
+    import hashlib
+    with open(path, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
     return {"tag": tag, "lambda_i": lambda_i, "seed": seed,
             "constant_context": constant_context, "history": hist,
-            "best_epoch": best[2], "dev_l1": best[0], "checkpoint": path}
+            "best_epoch": best[2], "dev_l1": best[0], "checkpoint": path,
+            "feat_mask": feat_mask, "checkpoint_sha256": sha}
 
 
 def wrap_t(a):

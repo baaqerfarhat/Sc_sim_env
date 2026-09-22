@@ -29,6 +29,16 @@ from .mpc import HardwareMPC, ProposedMPC
 from .plant import wrap_pi
 from .scenarios import (FEATURE_SCALE, build_history, from_body_frame,
                         to_body_frame)
+from .scenarios import feature_mask as S_feature_mask
+
+
+def _file_sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 class BasePolicy:
@@ -58,6 +68,7 @@ class BasePolicy:
     def act(self, k, x_hat, ref_prev, chain, hist):
         """Default path: solve, allocate, transmit. No acceptance check, matching
         the deployed controller."""
+        _t0 = time.perf_counter()
         self.stats["n_steps"] += 1
         z = self.context(k, x_hat, hist)
         dres = self.residual(k, x_hat, hist)
@@ -67,11 +78,21 @@ class BasePolicy:
         _, cinfo = chain.trial(u_star, x_hat[4])
         chain.commit(cinfo)
         self.u_prev = np.asarray(u_star, dtype=float)
+        # These arms have no repair, no screen and no supervisor, so every transmitted
+        # command is the optimiser's own first action. The provenance fields are still
+        # emitted, with their `not_applicable` values, so the Sec 8.4 taxonomy is total
+        # over every method rather than over a subset.
         cinfo.update({"z": z, "gate": 1, "accepted": True,
-                      "action_src": "candidate",
+                      "action_src": "mpc_primary",
+                      "repair_seed_origin": "not_applicable",
+                      "projection_applied": False, "compensation_applied": False,
+                      "reject_reason": None, "ineligible_reason": None,
                       "solve_ms": info.get("solve_time_ms", np.nan),
                       "fallback": bool(info.get("fallback", False)),
                       "u_prop": np.asarray(u_star, dtype=float)})
+        dec_ms = (time.perf_counter() - _t0) * 1e3
+        cinfo["decision_ms"] = float(dec_ms)
+        cinfo["deadline_miss"] = bool(dec_ms > C.TS * 1e3)
         return cinfo
 
 
@@ -87,11 +108,26 @@ class TorchPolicyMixin:
         import torch
         from .context import ContextModel
         ck = torch.load(checkpoint, map_location="cpu", weights_only=False)
-        self.model = ContextModel(constant_context=ck.get("constant_context", False))
-        self.model.load_state_dict(ck["model"])
+        # The encoder-input mask is part of the trained model, so it is restored from
+        # the checkpoint rather than supplied by the caller. A modality ablation whose
+        # mask is not carried here would be deployed as the full model and the
+        # comparison would be silently vacuous.
+        self.feat_mask_name = ck.get("feat_mask", "full")
+        self.model = ContextModel(constant_context=ck.get("constant_context", False),
+                                  feat_mask=S_feature_mask(self.feat_mask_name))
+        sd = dict(ck["model"])
+        # Checkpoints written before the mask existed do not contain it. Supplying the
+        # value implied by the checkpoint's own `feat_mask` tag keeps the load STRICT -
+        # a genuine architecture mismatch still raises - while remaining backward
+        # compatible with the frozen archive.
+        sd.setdefault("feat_mask", self.model.feat_mask.clone())
+        self.model.load_state_dict(sd)
         self.model.eval()
         self.torch = torch
         self.checkpoint = checkpoint
+        # SHA-256 of the checkpoint file, logged per episode so a reported result can be
+        # tied to the exact weights that produced it (Sec 8.1).
+        self.checkpoint_sha256 = _file_sha256(checkpoint)
         self._z = np.zeros(C.D_LATENT)
 
     def _infer(self, k, hist):
@@ -234,6 +270,20 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         # Enforce Eq. (15)'s first-action decrease condition by exact projection
         # instead of checking it after the fact and discarding the proposal.
         self.project_first_action = bool(kw.pop("project_first_action", True))
+        # ---- R-off-clean (Sec 4.2) -------------------------------------------------
+        # `repair=False` disables FINITE PROPOSAL REPAIR ONLY: no continuous projection
+        # and no allocation compensation of the MPC proposal. Everything else is
+        # identical, and critically BOTH arms trial-allocate their own proposal and then
+        # apply the SAME first and final screens to the resulting nominal-equivalent
+        # TRANSMITTED command.
+        #
+        # This is why the historical M7 is not an acceptable repair ablation and must
+        # not be relabelled as one: with alloc-aware selection off, M7 evaluated the
+        # first screen on the PROPOSED wrench while M3 evaluated it on the transmitted
+        # one, so it changed the command the screen was applied to as well as the
+        # repair. The two arms were then screened on different quantities and the
+        # difference cannot be attributed to repair.
+        self.repair = bool(kw.pop("repair", True))
         # Declared modification to Eq. (15); see the justification at its use site.
         self.first_action_eta = bool(kw.pop("first_action_eta", True))
         kw.setdefault("huber", True)
@@ -337,19 +387,28 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         # either fails the guarantee cannot be claimed, so the fixed supervisor acts
         # and the sample is recorded as supervisor-driven rather than as a quiet
         # success.
-        eligible = True
+        eligible, inelig_reason = True, None
         if self.recovery and self.P is not None and self.R is not None:
             if CT.norm_P(e_k, self.P) > self.R:
                 eligible = False
+                inelig_reason = "operating_radius"
                 self.stats["n_elig_radius_fail"] += 1
         if self.recovery and self.P is not None and self.K is not None and not fb_ok:
             if eligible:
                 self.stats["n_elig_fb_only_fail"] += 1
+                inelig_reason = "no_passing_fallback"
             eligible = False
         gate = int(eligible)
         self.stats["n_active" if eligible else "n_gate_off"] += 1
 
         chosen, accepted, slack, src = None, True, np.nan, "candidate"
+        # Sec 8.3/8.4 provenance of the transmitted command, kept ORTHOGONAL to the
+        # action source: which seed the finite repair search selected, and whether
+        # continuous projection or allocation compensation was applied. These are
+        # separate fields precisely so an unchanged MPC command can be distinguished
+        # from a projected, compensated or replaced one.
+        seed_origin, proj_applied, comp_applied = "not_applicable", False, False
+        reject_reason = None
 
         # In MONITOR mode eligibility is recorded but not acted on. That is the whole
         # purpose of the mode: eta and R have to be fitted to slacks observed while
@@ -361,18 +420,37 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
             u_sup = self._supervisor(x_hat, chain)
             _, chosen = chain.trial(u_sup, x_hat[4])
             chosen["_u_prop"] = u_sup
-            accepted, src = False, "supervisor"
+            accepted = False
+            # Sec 8.4: the supervisor is reached for distinguishable reasons and they
+            # are not interchangeable. A single `supervisor` label cannot tell a state
+            # outside the operating radius from a state inside it whose fallback failed,
+            # and those two call for different remedies.
+            src = {"operating_radius": "supervisor_operating_radius",
+                   "no_passing_fallback": "supervisor_no_passing_fallback"}.get(
+                       inelig_reason, "supervisor_preaction_ineligible_other")
             self.stats["n_supervisor"] += 1
             info = {"fallback": False, "solve_time_ms": 0.0}
         else:
             u_star, info = self.mpc.solve(x_hat, ref_prev, self.u_prev, dres)
             if info.get("fallback"):
                 self.stats["n_fallback"] += 1
-                # optimiser failure or deadline: the stored PASSING fallback
-                chosen, accepted, src = fb_info, False, "fallback_solver_fail"
+                # optimiser failure or deadline: the stored PASSING fallback. The two
+                # are separate sources because a solver that returned infeasible and a
+                # solver that ran out of time are different failures.
+                chosen, accepted = fb_info, False
+                src = ("fallback_deadline" if info.get("deadline")
+                       else "fallback_solver")
                 if chosen is None:
-                    _, chosen = chain.trial(u_star, x_hat[4])
-                    src = "unchecked_solver_fallback"
+                    # No verified fallback exists, so there is nothing to fall back ON.
+                    # Transmitting the unexamined optimiser output here - which an
+                    # earlier version did under the label `unchecked_solver_fallback` -
+                    # sends a command that passed no screen at all. The supervisor acts
+                    # instead, and the sample is recorded as such.
+                    u_sup = self._supervisor(x_hat, chain)
+                    _, chosen = chain.trial(u_sup, x_hat[4])
+                    chosen["_u_prop"] = u_sup
+                    src = "supervisor_posteligibility_failure"
+                    self.stats["n_supervisor"] += 1
             else:
                 # Sec 4.2: the manuscript's Eq. (15) carries a FIRST-ACTION norm
                 # condition, WITHOUT the post-allocation allowance eta:
@@ -391,21 +469,35 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                 # introduce and that the controller could have planned around, which
                 # is what drove the fixed supervisor to 42-66% of all actions.
                 cand, proj_feasible = None, True
-                if (self.project_first_action and self.recovery
+                u_raw = np.asarray(u_star, dtype=float).copy()
+                if (self.repair and self.project_first_action and self.recovery
                         and self.P is not None and u_r is not None):
                     u_star, proj_feasible = self._project_first_action(
                         u_star, e_k, u_r, d_r, r_now, r_next, chain)
+                    proj_applied = bool(not np.allclose(u_star, u_raw, atol=1e-12))
                     self.stats["n_proj_infeasible"] += int(not proj_feasible)
-                if self.alloc_aware and u_r is not None:
+                if self.repair and self.alloc_aware and u_r is not None:
                     rho = (self.lam * CT.norm_P(e_k, self.P)
                            + CT.norm_P(d_r, self.P))
                     u_opt = self._wrench_star(e_k, u_r, d_r, chain, r_now, r_next)
                     u_star, cand, _, _ = self._alloc_aware_trial(
                         u_star, e_k, u_r, d_r, r_now, r_next, chain, x_hat[4],
                         extra_seeds=[u_opt, u_r + self.K @ e_k], rho=rho)
-                    u_eval = cand["u_nominal_transmitted"]
+                    seed_origin = ("projected_mpc" if proj_applied else "raw_mpc",
+                                   "p_error", "feedback")[cand.get("_seed_index", 0)]
+                    comp_applied = bool(cand.get("_compensated", False))
                 else:
-                    u_eval = np.asarray(u_star)
+                    # R-off-clean, and every arm with repair disabled: the proposal is
+                    # still TRIAL-ALLOCATED, and the screens below are still applied to
+                    # the resulting transmitted command, so the only difference from the
+                    # repair-on arm is the repair itself.
+                    _, cand = chain.trial(u_star, x_hat[4])
+                    seed_origin = "projected_mpc" if proj_applied else "raw_mpc"
+                # Sec 4.2: the screen is evaluated on the command that will ACTUALLY be
+                # transmitted, on every arm. Evaluating it on the proposal in one arm
+                # and on the transmitted command in the other is the confound that
+                # disqualified the historical M7 as a repair ablation.
+                u_eval = np.asarray(cand["u_nominal_transmitted"], dtype=float)
 
                 first_ok = True
                 if self.recovery and self.P is not None and u_r is not None:
@@ -442,10 +534,9 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                         and self.check_mode != "monitor"):
                     # no timely FEASIBLE candidate exists, so the stored passing
                     # fallback is transmitted
-                    chosen, accepted, src = fb_info, False, "fallback_first_action"
+                    chosen, accepted = fb_info, False
+                    src, reject_reason = "fallback_first_screen", "first_screen"
                 else:
-                    if cand is None:
-                        _, cand = chain.trial(u_star, x_hat[4])
                     cand["_u_prop"] = u_star
                     cand["_first_action_ok"] = first_ok
                     if fb_info is not None:
@@ -467,8 +558,9 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                         if not ok_adm:
                             # never transmit a command outside the declared budget
                             self.stats["n_reject"] += 1
-                            chosen, accepted, src = (fb_info, False,
-                                                     "fallback_inadmissible")
+                            chosen, accepted = fb_info, False
+                            src = "fallback_command_admissibility"
+                            reject_reason = "command_admissibility"
                         elif ok_dec or not act_on_decrease:
                             # monitor and the M4 ablation record the would-be verdict
                             # and transmit the candidate regardless
@@ -477,10 +569,23 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                                 self.stats["n_would_reject"] += 1
                         else:
                             self.stats["n_reject"] += 1
-                            chosen, accepted, src = (fb_info, False,
-                                                     "fallback_checked")
+                            chosen, accepted = fb_info, False
+                            src = "fallback_repeated_check"
+                            reject_reason = "repeated_check"
                     else:
                         chosen, accepted = cand, True
+
+        # Sec 8.4: the candidate sources are split by whether the transmitted command IS
+        # the optimiser's own first action or a repaired/replaced one. Collapsing them
+        # into a single `candidate` label reports a planner contribution that includes
+        # every command the repair search substituted for it.
+        if src == "candidate":
+            src = ("mpc_primary" if (seed_origin == "raw_mpc" and not comp_applied)
+                   else "mpc_replacement")
+        else:
+            # a diverted action did not transmit the candidate, so candidate-side
+            # provenance does not describe the transmitted command
+            seed_origin, proj_applied, comp_applied = "not_applicable", False, False
 
         if chosen is None:
             # only reachable if a rejection path fired without a stored fallback,
@@ -500,6 +605,15 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
                        "slack_cmd": float(slack) if np.isfinite(slack) else np.nan,
                        "slack_fb": float(fb_slack),
                        "action_src": src,
+                       # Sec 8.3/8.4: orthogonal provenance fields. The rejection reason
+                       # and the transmitted-action source are SEPARATE quantities, and
+                       # the first one is not recoverable from the second whenever a
+                       # screen fired but no diversion followed it.
+                       "repair_seed_origin": seed_origin,
+                       "projection_applied": bool(proj_applied),
+                       "compensation_applied": bool(comp_applied),
+                       "reject_reason": reject_reason,
+                       "ineligible_reason": inelig_reason,
                        "e_P": (CT.norm_P(e_k, self.P) if self.P is not None
                                else np.nan),
                        "solve_ms": info.get("solve_time_ms", np.nan),
@@ -647,12 +761,20 @@ class LearnedContextPolicy(BasePolicy, TorchPolicyMixin):
         if extra_seeds:
             seeds += [np.asarray(s, dtype=float) for s in extra_seeds]
         best = None
-        for seed in seeds:
+        # Sec 8.3 requires the repair candidates IN GENERATION ORDER, which seed won,
+        # and whether allocation compensation was applied - separately from whether the
+        # command passed. Without those fields an unchanged MPC command and a
+        # compensated or replaced one are indistinguishable in the logs, and the
+        # action-source table cannot separate `mpc_primary` from `mpc_replacement`.
+        for si, seed in enumerate(seeds):
             req = seed
-            for _ in range(2):                     # one Newton step on the known map
+            for step in range(2):                  # one Newton step on the known map
                 _, info = chain.trial(req, psi)
                 u_tx = info["u_nominal_transmitted"]
                 val = lhs_of(u_tx)
+                info["_seed_index"] = si
+                info["_compensated"] = bool(step > 0)
+                info["_n_repair_trials"] = si * 2 + step + 1
                 if best is None or val < best[0]:
                     best = (val, req.copy(), info)
                 if rho is not None and val <= rho:
@@ -759,6 +881,7 @@ class FallbackOnlyPolicy(LearnedContextPolicy):
     name = "fallback_only"
 
     def act(self, k, x_hat, ref_prev, chain, hist):
+        _t0 = time.perf_counter()
         self.stats["n_steps"] += 1
         # the context and residual are still computed: the feedforward is
         # context-conditioned in M3, and removing that too would confound MPC
@@ -790,14 +913,21 @@ class FallbackOnlyPolicy(LearnedContextPolicy):
             eligible = False
 
         if eligible:
-            chosen, src = fb, "fallback_only"
+            # Sec 8.4: M5's direct feedback command has its own role, distinct from a
+            # feedback seed that the MPC repair search happened to select. The latter is
+            # `mpc_replacement` inside the planning controller; this is the controller
+            # whose only command is feedback, and the two must not share a label.
+            chosen, src = fb, "m5_feedback"
             chosen["_u_prop"] = u_fb
             self.stats["n_active"] += 1
         else:
             u_sup = self._supervisor(x_hat, chain)
             _, chosen = chain.trial(u_sup, x_hat[4])
             chosen["_u_prop"] = u_sup
-            src = "supervisor"
+            src = ("supervisor_operating_radius"
+                   if (self.R is not None
+                       and CT.norm_P(e_k, self.P) > self.R)
+                   else "supervisor_no_passing_fallback")
             self.stats["n_gate_off"] += 1
             self.stats["n_supervisor"] += 1
 
@@ -806,6 +936,14 @@ class FallbackOnlyPolicy(LearnedContextPolicy):
         chosen.update({"z": z, "gate": int(eligible), "accepted": bool(fb_ok),
                        "slack_cmd": float(fb_slack), "slack_fb": float(fb_slack),
                        "action_src": src, "solve_ms": 0.0, "fallback": False,
+                       "repair_seed_origin": "not_applicable",
+                       "projection_applied": False,
+                       "compensation_applied": bool(self.alloc_aware),
+                       "reject_reason": None if fb_ok else "fallback_screen",
+                       "ineligible_reason": None if eligible else "m5_fallback_failed",
                        "e_P": CT.norm_P(e_k, self.P),
                        "u_prop": np.asarray(chosen["_u_prop"], dtype=float)})
+        dec_ms = (time.perf_counter() - _t0) * 1e3
+        chosen["decision_ms"] = float(dec_ms)
+        chosen["deadline_miss"] = bool(dec_ms > C.TS * 1e3)
         return chosen

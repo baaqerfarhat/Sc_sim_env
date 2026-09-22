@@ -1,0 +1,26 @@
+==============================================================================
+the operating radius is absorbing, and the declared rule mis-set it
+==============================================================================
+
+1. the trap, in closed form
+  position block of P has eigenvalues 882.938 to 883.369
+  at R = 51.4825, a vehicle AT REST is ineligible in every direction beyond 1.7326 m of position error,
+  and may be ineligible from 1.7322 m.
+  the supervisor is u = -kp*[vx, vy, r]: it reads no position error at all, so it cannot leave that set.
+  the retained step family presents a 2.0 m setpoint change at t = 0, which is 1.2x the entry threshold.
+
+2. does the supervisor ever hand control back? measured over 64 episodes
+     trap probe: 64/64 done in 25s (14 workers)
+  step         supervisor share 0.765, longest unbroken run 600 steps of 600, ends inside a supervisor interval on 19/32 episodes
+  smooth_dock  supervisor share 0.062, longest unbroken run 279 steps of 600, ends inside a supervisor interval on 4/32 episodes
+
+3. the corrected radius, derived on the calibration block only
+     monitor pass: 200/200 done in 117s (14 workers)
+     monitor pass: 200/200 done in 117s (14 workers)
+  observed ||e||_P over 120000 monitor transitions: p50 11.24, p95 51.48, p99 63.56, max 140.18
+  envelope clause: 1.20 x max = 168.2125
+  task clause: ||e||_P of a 2 m at-rest offset = 59.4430
+  corrected R = 168.2125   (was 51.4825, a factor 3.27)
+  R = max( 1.20 * max observed ||e||_P over the monitor pass, ||e||_P of a 2 m at-rest position error ). The first clause makes the radius an envelope of normal operation rather than a quantile that excludes its tail; the second guarantees the retained step task's initial condition is admissible, so the task cannot be forbidden at t = 0.
+
+wrote results/pathb4b_radius.json (175s)

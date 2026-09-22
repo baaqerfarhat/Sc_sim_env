@@ -58,6 +58,15 @@ class EpisodeLog:
     slack_cmd: list = field(default_factory=list)
     slack_fb: list = field(default_factory=list)
     action_src: list = field(default_factory=list)
+    # Sec 8.3/8.4: command provenance orthogonal to the action source. Which repair seed
+    # was selected, whether continuous projection or allocation compensation was applied,
+    # and the screen that rejected the candidate. `reject_reason` is NOT recoverable from
+    # `action_src`, because a screen can fire on an arm that does not act on it.
+    repair_seed_origin: list = field(default_factory=list)
+    projection_applied: list = field(default_factory=list)
+    compensation_applied: list = field(default_factory=list)
+    reject_reason: list = field(default_factory=list)
+    ineligible_reason: list = field(default_factory=list)
     e_P: list = field(default_factory=list)
     meta: dict = field(default_factory=dict)
 
@@ -305,7 +314,14 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
             log.slack_cmd.append(float(out.get("slack_cmd", np.nan)))
             log.slack_fb.append(float(out.get("slack_fb", np.nan)))
             # which controller actually produced the transmitted action
-            log.action_src.append(str(out.get("action_src", "candidate")))
+            log.action_src.append(str(out.get("action_src", "mpc_primary")))
+            log.repair_seed_origin.append(str(out.get("repair_seed_origin",
+                                                      "not_applicable")))
+            log.projection_applied.append(bool(out.get("projection_applied", False)))
+            log.compensation_applied.append(bool(out.get("compensation_applied",
+                                                         False)))
+            log.reject_reason.append(str(out.get("reject_reason") or "none"))
+            log.ineligible_reason.append(str(out.get("ineligible_reason") or "none"))
             log.e_P.append(float(out.get("e_P", np.nan)))
 
         x = x_next
@@ -330,5 +346,27 @@ def run_policy_episode(policy, *, seed=0, steps=C.EPISODE_STEPS, scenario=None,
                      "enforce_first_action": bool(
                          getattr(policy, "enforce_first_action", False)),
                      "enforce_post_alloc": bool(
-                         getattr(policy, "enforce_post_alloc", False))})
+                         getattr(policy, "enforce_post_alloc", False)),
+                     # Sec 8.1 episode provenance: the checkpoint hash, the encoder-input
+                     # mask and the repair switch travel with the result, so a reported
+                     # number can be tied to the exact weights and deployment options
+                     # that produced it without rerunning the controller.
+                     "checkpoint": getattr(policy, "checkpoint", None),
+                     "checkpoint_sha256": getattr(policy, "checkpoint_sha256", None),
+                     "feat_mask": getattr(policy, "feat_mask_name", "full"),
+                     "repair": bool(getattr(policy, "repair", False)),
+                     "alloc_aware": bool(getattr(policy, "alloc_aware", False)),
+                     "first_action_eta": bool(getattr(policy, "first_action_eta",
+                                                      False)),
+                     "mpc_horizon_N": int(getattr(getattr(policy, "mpc", None), "N",
+                                                  C.N_HORIZON_HW)),
+                     # Sec 5.1: N is the MPC preview length and H is the learned-model
+                     # training rollout depth. They are different numbers and are
+                     # recorded separately so an H+1 array can never be labelled a
+                     # controller preview.
+                     "train_rollout_depth_H": int(C.MULTISTEP_H),
+                     "reference_version": getattr(ref_gen, "version",
+                                                  getattr(ref_gen, "name", None)),
+                     "episode_seed": int(seed),
+                     "scenario": sc.to_dict()})
     return log

@@ -1,0 +1,164 @@
+==============================================================================
+PATH B  Priority 4: five-seed completion and the modality ablation
+==============================================================================
+
+development-selected lambda_I = 0  (so M2 is the SELECTED method)
+ablation weight used by M3     = 1  (unchanged from archived seeds 0-2)
+
+reusing the frozen corpus: 360 parent episodes, manifest 57bea4173319b8f6
+  train 94240 windows, dev 23560 windows  (identical to the archived seeds)
+
+[1/11] --- training const_s3  (lambda_I=0, constant_context=True, feat_mask=full) ---
+    epoch 0  L1 0.001737  L_H 0.003235  L_impact 0.00000  dev_L1 0.001585
+    epoch 1  L1 0.001710  L_H 0.003174  L_impact 0.00000  dev_L1 0.001583
+    epoch 2  L1 0.001708  L_H 0.003054  L_impact 0.00000  dev_L1 0.001580
+    epoch 3  L1 0.001706  L_H 0.003092  L_impact 0.00000  dev_L1 0.001581
+    epoch 4  L1 0.001706  L_H 0.003092  L_impact 0.00000  dev_L1 0.001582
+    epoch 5  L1 0.001706  L_H 0.003174  L_impact 0.00000  dev_L1 0.001582
+    epoch 6  L1 0.001706  L_H 0.003026  L_impact 0.00000  dev_L1 0.001587
+    epoch 7  L1 0.001705  L_H 0.003197  L_impact 0.00000  dev_L1 0.001579
+    selected epoch 7 (dev_L1 0.001579) -> data/model_const_s3.pt
+
+[2/11] --- training const_s4  (lambda_I=0, constant_context=True, feat_mask=full) ---
+    epoch 0  L1 0.001739  L_H 0.003299  L_impact 0.00000  dev_L1 0.001584
+    epoch 1  L1 0.001708  L_H 0.003144  L_impact 0.00000  dev_L1 0.001585
+    epoch 2  L1 0.001707  L_H 0.003229  L_impact 0.00000  dev_L1 0.001584
+    epoch 3  L1 0.001707  L_H 0.003188  L_impact 0.00000  dev_L1 0.001579
+    epoch 4  L1 0.001705  L_H 0.003088  L_impact 0.00000  dev_L1 0.001579
+    epoch 5  L1 0.001707  L_H 0.003076  L_impact 0.00000  dev_L1 0.001581
+    epoch 6  L1 0.001706  L_H 0.003087  L_impact 0.00000  dev_L1 0.001582
+    epoch 7  L1 0.001705  L_H 0.003108  L_impact 0.00000  dev_L1 0.001581
+    selected epoch 4 (dev_L1 0.001579) -> data/model_const_s4.pt
+
+[3/11] --- training no_impact_s3  (lambda_I=0, constant_context=False, feat_mask=full) ---
+    epoch 0  L1 0.001653  L_H 0.003041  L_impact 0.00000  dev_L1 0.001433
+    epoch 1  L1 0.001532  L_H 0.002752  L_impact 0.00000  dev_L1 0.001371
+    epoch 2  L1 0.001467  L_H 0.002570  L_impact 0.00000  dev_L1 0.001335
+    epoch 3  L1 0.001373  L_H 0.002562  L_impact 0.00000  dev_L1 0.001203
+    epoch 4  L1 0.001276  L_H 0.002511  L_impact 0.00000  dev_L1 0.001155
+    epoch 5  L1 0.001242  L_H 0.002543  L_impact 0.00000  dev_L1 0.001142
+    epoch 6  L1 0.001218  L_H 0.002370  L_impact 0.00000  dev_L1 0.001151
+    epoch 7  L1 0.001209  L_H 0.002477  L_impact 0.00000  dev_L1 0.001130
+    selected epoch 7 (dev_L1 0.001130) -> data/model_no_impact_s3.pt
+
+[4/11] --- training no_impact_s4  (lambda_I=0, constant_context=False, feat_mask=full) ---
+    epoch 0  L1 0.001650  L_H 0.003101  L_impact 0.00000  dev_L1 0.001440
+    epoch 1  L1 0.001518  L_H 0.002709  L_impact 0.00000  dev_L1 0.001359
+    epoch 2  L1 0.001441  L_H 0.002683  L_impact 0.00000  dev_L1 0.001304
+    epoch 3  L1 0.001334  L_H 0.002613  L_impact 0.00000  dev_L1 0.001194
+    epoch 4  L1 0.001264  L_H 0.002491  L_impact 0.00000  dev_L1 0.001158
+    epoch 5  L1 0.001232  L_H 0.002406  L_impact 0.00000  dev_L1 0.001148
+    epoch 6  L1 0.001216  L_H 0.002409  L_impact 0.00000  dev_L1 0.001119
+    epoch 7  L1 0.001202  L_H 0.002379  L_impact 0.00000  dev_L1 0.001121
+    selected epoch 6 (dev_L1 0.001119) -> data/model_no_impact_s4.pt
+
+[5/11] --- training full_s3  (lambda_I=1, constant_context=False, feat_mask=full) ---
+    epoch 0  L1 0.001724  L_H 0.003182  L_impact 0.15100  dev_L1 0.001555
+    epoch 1  L1 0.001676  L_H 0.003064  L_impact 0.08880  dev_L1 0.001549
+    epoch 2  L1 0.001671  L_H 0.002953  L_impact 0.06138  dev_L1 0.001547
+    epoch 3  L1 0.001672  L_H 0.002981  L_impact 0.04245  dev_L1 0.001546
+    epoch 4  L1 0.001668  L_H 0.002993  L_impact 0.03037  dev_L1 0.001543
+    epoch 5  L1 0.001656  L_H 0.003046  L_impact 0.02312  dev_L1 0.001523
+    epoch 6  L1 0.001644  L_H 0.002893  L_impact 0.01758  dev_L1 0.001517
+    epoch 7  L1 0.001630  L_H 0.003047  L_impact 0.01353  dev_L1 0.001496
+    selected epoch 7 (dev_L1 0.001496) -> data/model_full_s3.pt
+
+[6/11] --- training full_s4  (lambda_I=1, constant_context=False, feat_mask=full) ---
+    epoch 0  L1 0.001719  L_H 0.003227  L_impact 0.15496  dev_L1 0.001542
+    epoch 1  L1 0.001668  L_H 0.003013  L_impact 0.09040  dev_L1 0.001545
+    epoch 2  L1 0.001668  L_H 0.003105  L_impact 0.06553  dev_L1 0.001543
+    epoch 3  L1 0.001659  L_H 0.003044  L_impact 0.04841  dev_L1 0.001521
+    epoch 4  L1 0.001645  L_H 0.002941  L_impact 0.03652  dev_L1 0.001514
+    epoch 5  L1 0.001632  L_H 0.002913  L_impact 0.02783  dev_L1 0.001510
+    epoch 6  L1 0.001624  L_H 0.002919  L_impact 0.02085  dev_L1 0.001494
+    epoch 7  L1 0.001613  L_H 0.002928  L_impact 0.01642  dev_L1 0.001484
+    selected epoch 7 (dev_L1 0.001484) -> data/model_full_s4.pt
+
+[7/11] --- training motion_s0  (lambda_I=0, constant_context=False, feat_mask=motion_command_only) ---
+    epoch 0  L1 0.001663  L_H 0.003225  L_impact 0.00000  dev_L1 0.001449
+    epoch 1  L1 0.001544  L_H 0.002735  L_impact 0.00000  dev_L1 0.001409
+    epoch 2  L1 0.001488  L_H 0.002707  L_impact 0.00000  dev_L1 0.001398
+    epoch 3  L1 0.001426  L_H 0.002617  L_impact 0.00000  dev_L1 0.001314
+    epoch 4  L1 0.001367  L_H 0.002563  L_impact 0.00000  dev_L1 0.001249
+    epoch 5  L1 0.001286  L_H 0.002504  L_impact 0.00000  dev_L1 0.001183
+    epoch 6  L1 0.001248  L_H 0.002510  L_impact 0.00000  dev_L1 0.001145
+    epoch 7  L1 0.001220  L_H 0.002410  L_impact 0.00000  dev_L1 0.001128
+    selected epoch 7 (dev_L1 0.001128) -> data/model_motion_s0.pt
+
+[8/11] --- training motion_s1  (lambda_I=0, constant_context=False, feat_mask=motion_command_only) ---
+    epoch 0  L1 0.001650  L_H 0.003213  L_impact 0.00000  dev_L1 0.001435
+    epoch 1  L1 0.001539  L_H 0.002753  L_impact 0.00000  dev_L1 0.001400
+    epoch 2  L1 0.001487  L_H 0.002692  L_impact 0.00000  dev_L1 0.001350
+    epoch 3  L1 0.001427  L_H 0.002637  L_impact 0.00000  dev_L1 0.001317
+    epoch 4  L1 0.001347  L_H 0.002634  L_impact 0.00000  dev_L1 0.001219
+    epoch 5  L1 0.001272  L_H 0.002586  L_impact 0.00000  dev_L1 0.001175
+    epoch 6  L1 0.001242  L_H 0.002501  L_impact 0.00000  dev_L1 0.001148
+    epoch 7  L1 0.001227  L_H 0.002448  L_impact 0.00000  dev_L1 0.001128
+    selected epoch 7 (dev_L1 0.001128) -> data/model_motion_s1.pt
+
+[9/11] --- training motion_s2  (lambda_I=0, constant_context=False, feat_mask=motion_command_only) ---
+    epoch 0  L1 0.001645  L_H 0.003060  L_impact 0.00000  dev_L1 0.001460
+    epoch 1  L1 0.001541  L_H 0.002736  L_impact 0.00000  dev_L1 0.001411
+    epoch 2  L1 0.001486  L_H 0.002711  L_impact 0.00000  dev_L1 0.001362
+    epoch 3  L1 0.001430  L_H 0.002705  L_impact 0.00000  dev_L1 0.001298
+    epoch 4  L1 0.001367  L_H 0.002530  L_impact 0.00000  dev_L1 0.001210
+    epoch 5  L1 0.001285  L_H 0.002563  L_impact 0.00000  dev_L1 0.001160
+    epoch 6  L1 0.001247  L_H 0.002425  L_impact 0.00000  dev_L1 0.001154
+    epoch 7  L1 0.001222  L_H 0.002486  L_impact 0.00000  dev_L1 0.001140
+    selected epoch 7 (dev_L1 0.001140) -> data/model_motion_s2.pt
+
+[10/11] --- training motion_s3  (lambda_I=0, constant_context=False, feat_mask=motion_command_only) ---
+    epoch 0  L1 0.001657  L_H 0.003073  L_impact 0.00000  dev_L1 0.001478
+    epoch 1  L1 0.001548  L_H 0.002794  L_impact 0.00000  dev_L1 0.001395
+    epoch 2  L1 0.001488  L_H 0.002592  L_impact 0.00000  dev_L1 0.001378
+    epoch 3  L1 0.001442  L_H 0.002600  L_impact 0.00000  dev_L1 0.001287
+    epoch 4  L1 0.001364  L_H 0.002557  L_impact 0.00000  dev_L1 0.001206
+    epoch 5  L1 0.001290  L_H 0.002612  L_impact 0.00000  dev_L1 0.001169
+    epoch 6  L1 0.001239  L_H 0.002407  L_impact 0.00000  dev_L1 0.001175
+    epoch 7  L1 0.001231  L_H 0.002528  L_impact 0.00000  dev_L1 0.001127
+    selected epoch 7 (dev_L1 0.001127) -> data/model_motion_s3.pt
+
+[11/11] --- training motion_s4  (lambda_I=0, constant_context=False, feat_mask=motion_command_only) ---
+    epoch 0  L1 0.001650  L_H 0.003127  L_impact 0.00000  dev_L1 0.001445
+    epoch 1  L1 0.001543  L_H 0.002755  L_impact 0.00000  dev_L1 0.001387
+    epoch 2  L1 0.001477  L_H 0.002720  L_impact 0.00000  dev_L1 0.001349
+    epoch 3  L1 0.001407  L_H 0.002646  L_impact 0.00000  dev_L1 0.001274
+    epoch 4  L1 0.001331  L_H 0.002545  L_impact 0.00000  dev_L1 0.001189
+    epoch 5  L1 0.001270  L_H 0.002474  L_impact 0.00000  dev_L1 0.001173
+    epoch 6  L1 0.001237  L_H 0.002448  L_impact 0.00000  dev_L1 0.001128
+    epoch 7  L1 0.001221  L_H 0.002426  L_impact 0.00000  dev_L1 0.001137
+    selected epoch 6 (dev_L1 0.001128) -> data/model_motion_s4.pt
+
+==============================================================================
+CHECKPOINT INVENTORY (Sec 15: frozen before the test manifest is opened)
+==============================================================================
+  checkpoint         lam_I                 mask     dev_L1  ep    origin  sha256
+  const_s0            0.00                 full   0.001576   6  archived  6b13398128eed001
+  const_s1            0.00                 full   0.001577   6  archived  b3958d1f234a0f5d
+  const_s2            0.00                 full   0.001579   7  archived  65a9e74d3d60e5e3
+  const_s3            0.00                 full   0.001579   7       new  070dcc83faacbcea
+  const_s4            0.00                 full   0.001579   4       new  db784a0f3213fd18
+  no_impact_s0        0.00                 full   0.001118   7  archived  9d4d9affe3bb7c80
+  no_impact_s1        0.00                 full   0.001106   7  archived  1398af08510b49db
+  no_impact_s2        0.00                 full   0.001120   6  archived  c4a2bd55cf636087
+  no_impact_s3        0.00                 full   0.001130   7       new  55ff635d80b0180f
+  no_impact_s4        0.00                 full   0.001119   6       new  397de0027cf7422b
+  full_s0             1.00                 full   0.001481   6  archived  b8ae316c9af6589c
+  full_s1             1.00                 full   0.001487   7  archived  a6aeeefff18b891c
+  full_s2             1.00                 full   0.001490   7  archived  61813a2fe89113b6
+  full_s3             1.00                 full   0.001496   7       new  3ce77f5cdea392f4
+  full_s4             1.00                 full   0.001484   7       new  5293aa62d65fdc25
+  motion_s0           0.00  motion_command_only   0.001128   7       new  372c55a9a913f8cb
+  motion_s1           0.00  motion_command_only   0.001128   7       new  6d1b67f57c65f1cd
+  motion_s2           0.00  motion_command_only   0.001140   7       new  88c875f6666fb976
+  motion_s3           0.00  motion_command_only   0.001127   7       new  05223e515b560fde
+  motion_s4           0.00  motion_command_only   0.001128   6       new  56bfcd21cbeeaff7
+
+dev one-step weighted MSE by method and seed (Sec 9.3: five seeds do not guarantee a narrow interval)
+  method                s0         s1         s2         s3         s4       mean        sd
+  M1              0.001576   0.001577   0.001579   0.001579   0.001579   0.001578  0.000001
+  M2              0.001118   0.001106   0.001120   0.001130   0.001119   0.001119  0.000008
+  M3              0.001481   0.001487   0.001490   0.001496   0.001484   0.001488  0.000006
+  Mmotion         0.001128   0.001128   0.001140   0.001127   0.001128   0.001130  0.000006
+
+wrote results/pathb3_train.json (28.1 min, 11 new jobs)

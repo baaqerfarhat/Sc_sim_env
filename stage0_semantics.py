@@ -338,7 +338,11 @@ def sec4_selection_semantics():
     a = log.arrays()
     srcs = set(a["action_src"])
     st = log.meta["policy_stats"]
-    no_candidate = "candidate" not in srcs
+    # Sec 8.4: the candidate is transmitted under one of two labels depending on whether
+    # the finite repair search replaced the optimiser's own first action. Both count as
+    # "a candidate was transmitted", so both must be excluded here.
+    CANDIDATE_SRCS = ("mpc_primary", "mpc_replacement")
+    no_candidate = not (srcs & set(CANDIDATE_SRCS))
     check("4.6a an unsatisfiable acceptance bar never transmits a candidate",
           no_candidate,
           f"action sources observed: {sorted(srcs)}; "
@@ -348,7 +352,8 @@ def sec4_selection_semantics():
     # (b) an unsatisfiable bar also makes the FALLBACK fail its own check, so
     #     eligibility must be false and the fixed supervisor must act. The earlier
     #     implementation transmitted the failing fallback instead.
-    frac_sup = float(np.mean([s == "supervisor" for s in a["action_src"]]))
+    frac_sup = float(np.mean([str(s).startswith("supervisor")
+                              for s in a["action_src"]]))
     check("4.6b a failing fallback yields ineligibility and the fixed supervisor",
           frac_sup > 0.5 and int(np.asarray(a["gate"]).sum()) == 0,
           f"supervisor share {frac_sup * 100:.0f}%, eligible steps "
@@ -364,15 +369,14 @@ def sec4_selection_semantics():
     st2 = log2.meta["policy_stats"]
     src2 = list(a2["action_src"])
     n = len(src2)
-    n_cand = sum(1 for s in src2 if s == "candidate")
-    n_fa = sum(1 for s in src2 if s == "fallback_first_action")
-    n_ck = sum(1 for s in src2 if s == "fallback_checked")
-    n_sup = sum(1 for s in src2 if s == "supervisor")
+    n_cand = sum(1 for s in src2 if s in CANDIDATE_SRCS)
+    n_fa = sum(1 for s in src2 if s == "fallback_first_screen")
+    n_ck = sum(1 for s in src2 if s == "fallback_repeated_check")
+    n_sup = sum(1 for s in src2 if str(s).startswith("supervisor"))
     # the decrease test and the command-admissibility budget are now SEPARATE
     # outcomes, because only the former is ablatable; both must be counted
-    n_adm = sum(1 for s in src2 if s == "fallback_inadmissible")
-    n_slv = sum(1 for s in src2 if s in ("fallback_solver_fail",
-                                         "unchecked_solver_fallback"))
+    n_adm = sum(1 for s in src2 if s == "fallback_command_admissibility")
+    n_slv = sum(1 for s in src2 if s in ("fallback_solver", "fallback_deadline"))
     # every step is accounted for by exactly one declared outcome, and the
     # first-action tally in the stats matches the number of diverted steps
     exact = (n_cand + n_fa + n_ck + n_adm + n_slv + n_sup == n

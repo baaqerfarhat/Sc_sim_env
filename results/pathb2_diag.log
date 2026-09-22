@@ -1,0 +1,66 @@
+==============================================================================
+1. the structural dead zone implied by the frozen plant constants
+==============================================================================
+  safety_filter force deadband        0.100 N
+  safety_filter yaw-moment deadband   0.020 N m
+  tiny-axis zeroing                   0.05 of dominant axis
+  certificate gain |K| position       9.9289, 9.9164 N per m
+  certificate gain |K| heading        0.8430 N m per rad
+  -> position error below             0.0101 m   produces no force at all
+  -> heading error below              1.359 deg produces no moment at all
+
+  The frozen task tolerance is 0.150 m and 5.0 deg.
+  Position: tolerance 0.150 m vs dead zone 0.010 m -> outside the dead zone, reachable
+  Heading:  tolerance 5.0 deg vs dead zone 1.36 deg -> outside the dead zone, reachable
+
+==============================================================================
+2. is the residual a bias, and is the command being zeroed in the hold?
+==============================================================================
+  smooth_dock T=30
+    hold tail: pos err mean 0.2833 std 0.0202 m,  heading err mean -9.21 std 1.56 deg
+    hold tail: both force axes transmitted as exactly zero 0.0% of slots;  yaw moment exactly zero 9.2%
+  smooth_dock T=50
+    hold tail: pos err mean 0.2844 std 0.0189 m,  heading err mean -9.16 std 1.65 deg
+    hold tail: both force axes transmitted as exactly zero 0.0% of slots;  yaw moment exactly zero 10.0%
+  step
+    hold tail: pos err mean 0.2802 std 0.0142 m,  heading err mean -9.09 std 1.87 deg
+    hold tail: both force axes transmitted as exactly zero 0.0% of slots;  yaw moment exactly zero 10.0%
+  smooth
+    hold tail: pos err mean 0.2829 std 0.0218 m,  heading err mean -10.20 std 1.08 deg
+    hold tail: both force axes transmitted as exactly zero 0.0% of slots;  yaw moment exactly zero 6.7%
+
+==============================================================================
+3. the SAME scorer on every family, healthy M0, 10 development episodes
+==============================================================================
+  step               completions 10/10   final pos err med 0.263 m   final |yaw| err med  8.44 deg
+                     {'task_success': 10}
+  smooth             completions 10/10   final pos err med 0.252 m   final |yaw| err med  9.17 deg
+                     {'task_success': 10}
+  transfer           completions  0/10   final pos err med nan m   final |yaw| err med   nan deg
+                     {'corrupted_unscorable': 10}
+  smooth_dock T=30   completions 10/10   final pos err med 0.253 m   final |yaw| err med  9.09 deg
+                     {'task_success': 10}
+  smooth_dock T=50   completions  9/10   final pos err med 0.252 m   final |yaw| err med  8.91 deg
+                     {'task_success': 9, 'both_tolerances_but_no_dwell': 1}
+
+==============================================================================
+verdict
+==============================================================================
+  The commanded-wrench deadband is NOT the cause. It was the first hypothesis,
+  and section 2 refutes it: both force axes are transmitted as nonzero in every
+  slot of the hold, and the dead zone the deadband implies is 0.010 m against a
+  0.28 m residual.
+
+  The cause is the ESTIMATOR. The loop converges to 0.031 m and 0.9 deg in the
+  frame the controller can see; the truth is 0.28 m away because the ESTIMATE
+  is 0.28 m away from the truth. There is no absolute position reference after
+  the one-shot t0 alignment, so that error is an unbounded random walk.
+
+  It is a property of the simulator, not of smooth_dock_v1: the retained step
+  and smooth families sit on the same floor when scored by the same rule. A
+  0.15 m TRUE-state tolerance is below that floor, so it would return zero for
+  every method under every task, making the endpoint a constant rather than a
+  discriminator. pathb2_floor.py quantifies the floor and freezes the
+  replacement endpoint.
+
+  wrote results/pathb2_diag.json

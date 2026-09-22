@@ -1,0 +1,57 @@
+==============================================================================
+PATH B  Sec 11.3: prospective test matrix
+==============================================================================
+
+frozen operational constants (from the calibration block, never the test block):
+  lambda = 0.9888   eta = 4   R = 51.4825   diagnostic tolerance = 0.662 m
+  M4 included in the matrix: False  (M4 omitted; the repeated-check performance claim is removed and only the semantic/replay result is reported)
+
+test manifest sha256 01d416add89f07818ce837a29fbfa07b9d34b0b8703b02d436baf2aa58a0cf2d
+population sha256    b790a993904aa4c0ac586736c2c9df9ecf0e367731cef1574e8231ededa02634
+480 unique scenario-condition units (2 families x 4 conditions x 60 keys)
+
+method     seeded  ckpts  units  rollouts  definition
+M0          False      1    480       480  nominal, no learned residual or context
+M1           True      5    480      2400  trained constant context
+M2           True      5    480      2400  changing context, prediction losses only (SELECTED)
+M3           True      5    480      2400  changing context + behavioural loss
+M5          False      1    480       480  nominal feedback + repair, no MPC optimisation
+Mmotion      True      5    480      2400  M2 without the estimator-diagnostic channels
+Roff         True      5    480      2400  M2 with finite proposal repair disabled
+TOTAL                       480     12960
+     rollouts: 12960/12960 done in 5221s (16 workers)
+     rollouts: 12960/12960 done in 5221s (16 workers)
+
+wrote 4 representative traces to results/pathb_traces.json
+
+method     rollouts  unique  ckpts  roll/unit  seedless methods must be 1.0
+M0              480     480      1        1.0
+M1             2400     480      5        5.0
+M2             2400     480      5        5.0
+M3             2400     480      5        5.0
+M5              480     480      1        1.0
+Mmotion        2400     480      5        5.0
+Roff           2400     480      5        5.0
+
+terminal progress categories (exactly one per rollout, Sec 9.5)
+method      never_entered_  position_but_n  both_tolerance    task_success  corrupted_unsc
+M0                     200              11              41             228               0
+M1                    1025              48             194            1133               0
+M2                    1027              62             178            1133               0
+M3                    1074              70             206            1050               0
+M5                     193              11              27             249               0
+Mmotion               1047              60             177            1116               0
+Roff                  1938             284             177               1               0
+
+orthogonal event flags (several may be true for one rollout)
+method      departed_afte  supervisor_in  no_passing_fa  solver_failur  repair_search  deadline_over  numerical_ano  episode_deadl
+M0                    191            304              0              0            417              4              0            252
+M1                    917           1510              0              0           2100              1              0           1267
+M2                    874           1481              0            301           2074              2              0           1267
+M3                    901           1518              0              0           2096              2              0           1350
+M5                    176            300              0              0              0              0              0            231
+Mmotion               866           1482              0            383           2076              1              0           1284
+Roff                  173           2392              0            740              0              1              0           2399
+
+wrote results/pathb_rollouts.csv (12960 rows, 102 columns)
+wrote results/pathb5_test.json (87.6 min, 12960 rollouts)
